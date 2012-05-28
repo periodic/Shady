@@ -1,0 +1,13 @@
+#!/bin/bash
+
+gcc -fPIC -Dwrap_EXPORTS -DLINUX -DX86_32 -c count_malloc.c -I \
+/home/cbcase/Documents/cs343/DynamoRIO/include/ -I \
+/home/cbcase/Documents/cs343/DynamoRIO/ext/include/
+
+gcc -shared -Wl,-soname,-count_malloc.so -o count_malloc.so \
+count_malloc.o \
+/home/cbcase/Documents/cs343/DynamoRIO/lib32/release/libdynamorio.so.3.2 \
+/home/cbcase/Documents/cs343/DynamoRIO/ext/lib32/release/libdrwrap.so \
+/home/cbcase/Documents/cs343/DynamoRIO/ext/lib32/release/libdrmgr.so \
+/home/cbcase/Documents/cs343/DynamoRIO/ext/lib32/release/libdrsyms.so \
+/home/cbcase/Documents/cs343/DynamoRIO/ext/lib32/release/libdrcontainers.a

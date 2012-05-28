@@ -11,5 +11,8 @@
 *.la
 *.a
 
+# Compiled Executables
+a.out
+
 # emacs tmp files
 *~
