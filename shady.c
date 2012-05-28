@@ -12,6 +12,8 @@ static dr_emit_flags_t event_basic_block(void *drcontext, void *tag,
 static char* opnd_string(opnd_t);
 static void instr_print(void*, instr_t *);
 static bool instr_is_stack_op(instr_t *instr);
+static instrlist_t * create_mem_checker(void* drcontext, instr_t * orig);
+static void create_mem_branch(void* drcontext, instr_t * orig, instrlist_t * checker);
 
 #ifdef WINDOWS
 # define DISPLAY_STRING(msg) dr_messagebox(msg)
@@ -48,19 +50,55 @@ event_basic_block(void *drcontext, void *tag,
     {
 
         if (instr_reads_memory(instr) && ! instr_is_stack_op(instr)) {
-            // Insert check after load.
             DISPLAY_STRING("Got memory read.");
 
-            instr_print(drcontext, instr);
+            // Create new basic block.  Does creation add it to the program?
+            instrlist_t *checkMem = create_mem_checker(drcontext, instr);
+
+            // insert a compare and jump before the offending instruction.
+            create_mem_branch(drcontext, instr, checkMem);
+
         }
         if (instr_writes_memory(instr) && ! instr_is_stack_op(instr)) {
-            // Insert check before write.
             DISPLAY_STRING("Memory write encountered.");
-
-            instr_print(drcontext, instr);
+            // TODO: Insert checks
         }
     }
     return DR_EMIT_DEFAULT;
+}
+
+static instrlist_t *
+create_mem_checker(void* drcontext, instr_t * orig)
+{
+    instrlist_t * newbb = instrlist_create(drcontext);
+    /* The mem-checker should look like the following:
+     *
+     * clean-call in to the main mem-checker.
+     * if OK, jump to orig
+     * store clean-call result in the target of the instruction.
+     * jump to orig + 1 instr
+     */
+
+    return newbb;
+}
+
+static void
+create_mem_branch(void* drcontext, instr_t * orig, instrlist_t * checker)
+{
+    /* The mem-checker branch should look as follows:
+     *
+     * comp mem MAGIC
+     * jez  checker
+     * orig
+     */
+
+    return;
+}
+
+static void
+memory_operation(void *drcontext, instr_t *instr)
+{
+    instr_print(drcontext, instr);
 }
 
 static char *
@@ -81,15 +119,7 @@ opnd_string(opnd_t opnd)
     } else if (opnd_is_instr(opnd)) {
         sprintf(buf, "Instr: %p", instr_get_app_pc(opnd_get_instr(opnd)));
     } else if (opnd_is_base_disp(opnd)) {
-        /*
-        if (opnd_get_base(opnd) == DR_REG_NULL) {
-            sprintf(buf, "Disp: %p", opnd_get_addr(opnd));
-        } else {
-        */
-            sprintf(buf, "Disp (%s, 0x%x, 0x%x) %p", get_register_name(opnd_get_base(opnd)), opnd_get_disp(opnd), opnd_get_scale(opnd), opnd_get_addr(opnd));
-        /*
-        }
-        */
+        sprintf(buf, "Disp (%s, 0x%x, 0x%x) %p", get_register_name(opnd_get_base(opnd)), opnd_get_disp(opnd), opnd_get_scale(opnd), opnd_get_addr(opnd));
     } else if (opnd_is_abs_addr(opnd)) {
         sprintf(buf, "Addr: %p", opnd_get_addr(opnd));
     } else if (opnd_is_memory_reference(opnd)) {
