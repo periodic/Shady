@@ -1,14 +1,15 @@
 #include "dr_api.h"
 #include "drsyms.h"
 #include "drwrap.h"
+#include "hashtable.h"
 
-static int malloc_count;
 static const int heap_pre_redzone_size = 8;
 static const int heap_post_redzone_size = 16;
 static const int sentinel_val = 0xdeadbeef;
 
+static hashtable_t mallocd_ptrs[1];
+
 static void exit_fn() {
-  dr_printf("I saw %d calls to malloc.\n", malloc_count);
   drsym_exit();
   drwrap_exit();
 }
@@ -24,13 +25,14 @@ static void fill_sentinel(void *_a, int n) {
 static void before_malloc(void *wrapctx, OUT void **user_data) {
   void *arg = drwrap_get_arg(wrapctx, 0);
   int sz = (int)arg;
-  printf ("malloc called with size of %d\n", sz);
+  dr_printf ("malloc called with size of %d\n", sz);
+  sz += (sz % sizeof (int));
+  dr_printf("rounded up to %d\n", sz);
   int new_sz = sz + heap_pre_redzone_size + heap_post_redzone_size;
   drwrap_set_arg(wrapctx, 0, (void*)new_sz);
 
   /* save original size request */
   *(int*)user_data = sz;
-  malloc_count++;
 }
 
 static void after_malloc(void *wrapctx, void *user_data) {
@@ -47,6 +49,10 @@ static void after_malloc(void *wrapctx, void *user_data) {
   fill_sentinel(new_retval + orig_sz, heap_post_redzone_size / sizeof (int));
 
   drwrap_set_retval(wrapctx, new_retval);
+
+  /* We save user base ptr / size */
+  dr_printf ("adding %p to hashtable\n", new_retval);
+  hashtable_add(mallocd_ptrs, new_retval, (void*)orig_sz);
 }
 
 static void before_free(void *wrapctx, OUT void **user_data) {
@@ -54,8 +60,22 @@ static void before_free(void *wrapctx, OUT void **user_data) {
   if (arg == NULL) {
     return; /* This is defined as a no-op */
   }
-  char *real_base = (char*)arg - heap_pre_redzone_size;
-  drwrap_set_arg(wrapctx, 0, real_base);
+  dr_printf ("free called with %p\n", arg);
+
+  void *lookup = hashtable_lookup(mallocd_ptrs, arg);
+  if (lookup == NULL) {
+    /* We "skip" free by setting arg to NULL */
+    dr_printf("skipping\n");
+    drwrap_set_arg(wrapctx, 0, NULL);
+  } else {
+    int orig_sz = (int)lookup;
+    dr_printf("filling at %p of sz %d\n", arg, orig_sz);
+    fill_sentinel(arg, orig_sz / sizeof(int)); /* cover user region with sentinel */
+    char *real_base = (char*)arg - heap_pre_redzone_size;    
+    dr_printf("setting free val to %p\n", real_base);
+    drwrap_set_arg(wrapctx, 0, real_base);
+    hashtable_remove(mallocd_ptrs, arg);
+  }
 }
 
 static void before_test_fn(void *wrapctx, OUT void **user_data) {
@@ -94,4 +114,14 @@ void dr_init(client_id_t id) {
   drsym_init(0);
   dr_register_exit_event(exit_fn);
   dr_register_module_load_event(module_load_fn);
+
+  hashtable_init_ex(mallocd_ptrs,
+                    4, /* 16 buckets initially */
+                    HASH_INTPTR, /* keys are ptrs */
+                    0, /* don't duplicate string keys */
+                    0, /* don't synchronize */
+                    NULL, /* no free function (TODO) */
+                    NULL, /* use default key hash fn */
+                    NULL /* use default key cmp fn */
+                    );
 }
