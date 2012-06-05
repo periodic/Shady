@@ -1,12 +1,10 @@
-static int foo;
-static int a = 31;
-static int b = 57;
-
+#include <stdio.h>
 int
 main (int argc, char** argv)
 {
+    unsigned int sentinel = 0xdeadbeef;
+    
+    printf("%x\n", sentinel);
 
-    foo = a + b;
-
-    return foo;
+    return 0;
 }

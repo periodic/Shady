@@ -12,16 +12,10 @@ static dr_emit_flags_t event_basic_block(void *drcontext, void *tag,
 static char* opnd_string(opnd_t);
 static void instr_print(void*, instr_t *);
 static bool instr_is_stack_op(instr_t *instr);
-static instrlist_t * create_mem_checker(void* drcontext, instr_t * orig);
-static void create_mem_branch(void* drcontext, instr_t * orig, instrlist_t * checker);
-
-#ifdef WINDOWS
-# define DISPLAY_STRING(msg) dr_messagebox(msg)
-#else
-# define DISPLAY_STRING(msg) dr_printf("%s\n", msg)
-#endif
+static void instrument_read(void * drcontext, instrlist_t * bb, instr_t * orig);
 
 //void *as_built_lock;
+static int cleancall_count = 0;
 
 DR_EXPORT void
 dr_init(client_id_t id)
@@ -37,69 +31,63 @@ event_exit()
 {
     /* free mutex */
     //dr_mutex_destroy(as_built_lock);
-    DISPLAY_STRING("Exit.");
+    dr_printf("Clean calls: %d\n", cleancall_count);
+    dr_printf("Exit.");
+}
+
+static void
+read_callback(uint* ptr)
+{
+    if (ptr != NULL) {
+        dr_printf("Got read of %p\n", ptr);
+    }
+    cleancall_count++;
 }
 
 static dr_emit_flags_t
 event_basic_block(void *drcontext, void *tag,
         instrlist_t *bb, bool for_trace, bool translating)
 {
+    instr_t *instr, *next_instr;
+
     /* count the number of instructions in this block */
-    instr_t *instr;
-    for (instr = instrlist_first(bb); instr != NULL; instr = instr_get_next(instr))
-    {
+    for (instr = instrlist_first(bb); instr != NULL; instr = next_instr) {
+        next_instr = instr_get_next(instr);
 
-        if (instr_reads_memory(instr) && ! instr_is_stack_op(instr)) {
-            DISPLAY_STRING("Got memory read.");
-
-            // Create new basic block.  Does creation add it to the program?
-            instrlist_t *checkMem = create_mem_checker(drcontext, instr);
-
-            // insert a compare and jump before the offending instruction.
-            create_mem_branch(drcontext, instr, checkMem);
-
-        }
-        if (instr_writes_memory(instr) && ! instr_is_stack_op(instr)) {
-            DISPLAY_STRING("Memory write encountered.");
-            // TODO: Insert checks
+        if (instr_reads_memory(instr)) {
+            instrument_read(drcontext, bb, instr);
         }
     }
+
     return DR_EMIT_DEFAULT;
 }
 
-static instrlist_t *
-create_mem_checker(void* drcontext, instr_t * orig)
-{
-    instrlist_t * newbb = instrlist_create(drcontext);
-    /* The mem-checker should look like the following:
-     *
-     * clean-call in to the main mem-checker.
-     * if OK, jump to orig
-     * store clean-call result in the target of the instruction.
-     * jump to orig + 1 instr
-     */
-
-    return newbb;
-}
-
 static void
-create_mem_branch(void* drcontext, instr_t * orig, instrlist_t * checker)
+instrument_read(void * drcontext, instrlist_t * bb, instr_t * orig)
 {
-    /* The mem-checker branch should look as follows:
-     *
-     * comp mem MAGIC
-     * jez  checker
-     * orig
-     */
+    int i;
+    opnd_t o;
 
-    return;
+    for (i = 0; i < instr_num_srcs(orig); i++) {
+        o = instr_get_src(orig, i);
+
+
+        if (opnd_is_memory_reference(o)) {
+            dr_printf("Instrumenting operand %i = %s\n", i, opnd_string(o));
+            dr_insert_clean_call(
+                    drcontext,
+                    bb,
+                    orig,
+                    (void *)read_callback,
+                    false /*no fp save*/,
+                    0,
+                    o
+                    );
+        }
+
+    }
 }
 
-static void
-memory_operation(void *drcontext, instr_t *instr)
-{
-    instr_print(drcontext, instr);
-}
 
 static char *
 opnd_string(opnd_t opnd)
@@ -112,14 +100,14 @@ opnd_string(opnd_t opnd)
         strcpy(buf, "Immed int:");
     } else if (opnd_is_immed_float(opnd)) {
         strcpy(buf, "Immed float:");
+    } else if (opnd_is_base_disp(opnd)) {
+        sprintf(buf, "Disp (%s, 0x%x, 0x%x) %p", get_register_name(opnd_get_base(opnd)), opnd_get_disp(opnd), opnd_get_scale(opnd), opnd_get_addr(opnd));
     } else if (opnd_is_near_pc(opnd)) {
         strcpy(buf, "Near PC");
     } else if (opnd_is_far_pc(opnd)) {
         strcpy(buf, "Far PC");
     } else if (opnd_is_instr(opnd)) {
         sprintf(buf, "Instr: %p", instr_get_app_pc(opnd_get_instr(opnd)));
-    } else if (opnd_is_base_disp(opnd)) {
-        sprintf(buf, "Disp (%s, 0x%x, 0x%x) %p", get_register_name(opnd_get_base(opnd)), opnd_get_disp(opnd), opnd_get_scale(opnd), opnd_get_addr(opnd));
     } else if (opnd_is_abs_addr(opnd)) {
         sprintf(buf, "Addr: %p", opnd_get_addr(opnd));
     } else if (opnd_is_memory_reference(opnd)) {
@@ -142,18 +130,7 @@ instr_print(void* drcontext, instr_t *instr)
 
     static char buf[char_buf_size];
     instr_disassemble_to_buffer(drcontext, instr, buf, char_buf_size);
-    DISPLAY_STRING(buf);
-
-    count = instr_num_srcs(instr);
-    for (i = 0; i < count; i++) {
-        op = instr_get_src(instr, i);
-        dr_printf("Src %d: %s\n", i, opnd_string(op));
-    }
-    count = instr_num_dsts(instr);
-    for (i = 0; i < count; i++) {
-        op = instr_get_dst(instr, i);
-        dr_printf("Dst %d: %s\n", i, opnd_string(op));
-    }
+    dr_printf(buf);
 }
 
 static bool

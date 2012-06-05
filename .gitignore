@@ -16,3 +16,7 @@ a.out
 
 # emacs tmp files
 *~
+
+# Drew's VIM hacks.
+.root
+
