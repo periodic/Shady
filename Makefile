@@ -8,7 +8,7 @@ TARGET_DIR=cs155-exploits/targets
 TEST_BIN=$(SPLOIT_DIR)/sploit1
 
 CC=gcc
-CFLAGS=-Wall -fPIC -DLINUX -DX86_32 -I $(DYNAMO_DIR)/include
+CFLAGS=-Wall -fPIC -DLINUX -DX86_64 -I $(DYNAMO_DIR)/include
 
 .c.o :
 	$(CC) $(CFLAGS) -c $<
@@ -24,7 +24,7 @@ targets:
 	make -C $(TARGET_DIR) all
 	cp $(TARGET_DIR)/target[0-9] /tmp
 
-all: shady.so
+all: shady.so simpletest
 
 clean:
 	rm -f *.o shady
@@ -33,3 +33,5 @@ clean:
 
 run: shady.so
 	$(DYNAMO_DIR)/bin64/drrun -client shady.so 0x1 "" $(TEST_BIN)
+
+simpletest: simpletest.o

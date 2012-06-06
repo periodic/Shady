@@ -2,7 +2,7 @@
 #include "dr_api.h"
 #include "dr_ir_macros.h"
 
-#define REDZONE 0xdeadbeef
+#define SENTINEL 0xdeadbeef
 
 static void event_exit(void);
 static dr_emit_flags_t event_basic_block(void *drcontext, void *tag,
@@ -23,6 +23,7 @@ dr_init(client_id_t id)
     dr_register_exit_event(event_exit);
     dr_register_bb_event(event_basic_block);
 
+    disassemble_set_syntax(DR_DISASM_INTEL);
     //as_built_lock = dr_mutex_create();
 }
 
@@ -36,11 +37,33 @@ event_exit()
 }
 
 static void
-read_callback(uint* ptr)
+read_callback(app_pc addr, uint i)
 {
-    if (ptr != NULL) {
-        dr_printf("Got read of %p\n", ptr);
+
+    instr_t instr;
+
+    // Get the drcontext
+    void* drcontext = dr_get_current_drcontext();
+
+    // Load the memory context.
+    dr_mcontext_t mc;
+    mc.size = sizeof(mc);
+    mc.flags = DR_MC_CONTROL | DR_MC_INTEGER;
+    dr_get_mcontext(drcontext, &mc);
+
+    // Get the instruction
+    instr_init(drcontext, &instr);
+    decode(drcontext, addr, &instr);
+
+    // Get memory address
+    int* accessed_mem = (opnd_compute_address(instr_get_src(&instr, i), &mc));
+
+    // Get word-aligned address.
+    //accessed_mem = accessed_mem - (accessed_mem % 4);
+    if (* accessed_mem == SENTINEL) {
+        dr_printf("Got read of %p => 0x%x (pc = %p)\n", accessed_mem, *accessed_mem, addr);
     }
+
     cleancall_count++;
 }
 
@@ -67,21 +90,25 @@ instrument_read(void * drcontext, instrlist_t * bb, instr_t * orig)
 {
     int i;
     opnd_t o;
+    app_pc pc = instr_get_app_pc(orig);
+
+    //instr_print(drcontext, orig);
+    //dr_printf("    (PC = %p)\n", pc);
 
     for (i = 0; i < instr_num_srcs(orig); i++) {
         o = instr_get_src(orig, i);
 
 
         if (opnd_is_memory_reference(o)) {
-            dr_printf("Instrumenting operand %i = %s\n", i, opnd_string(o));
             dr_insert_clean_call(
                     drcontext,
                     bb,
                     orig,
                     (void *)read_callback,
                     false /*no fp save*/,
-                    0,
-                    o
+                    2,
+                    OPND_CREATE_INTPTR(instr_get_app_pc(orig)),
+                    OPND_CREATE_INT64(i)
                     );
         }
 
@@ -124,13 +151,9 @@ opnd_string(opnd_t opnd)
 static void
 instr_print(void* drcontext, instr_t *instr)
 {
-    opnd_t op;
-    int i;
-    int count;
-
     static char buf[char_buf_size];
-    instr_disassemble_to_buffer(drcontext, instr, buf, char_buf_size);
-    dr_printf(buf);
+    if (instr_disassemble_to_buffer(drcontext, instr, buf, char_buf_size) > 0)
+        dr_printf(buf);
 }
 
 static bool
