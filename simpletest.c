@@ -1,7 +1,8 @@
 #include <stdio.h>
 
 static unsigned int sentinel = 0xdeadbeef;
-    
+
+
 int
 main (int argc, char** argv)
 {
@@ -9,9 +10,9 @@ main (int argc, char** argv)
 
     printf("%x\n", tmp);
 
-    int * f = 0xdeadbeef;
+    sentinel = (0x12345678);
 
-    printf("%p\n", f);
+    printf("%x\n", sentinel);
 
     return 0;
 }

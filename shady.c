@@ -12,10 +12,13 @@ static dr_emit_flags_t event_basic_block(void *drcontext, void *tag,
 static char* opnd_string(opnd_t);
 static void instr_print(void*, instr_t *);
 static bool instr_is_stack_op(instr_t *instr);
+
 static void instrument_read(void * drcontext, instrlist_t * bb, instr_t * orig);
+static void instrument_write(void * drcontext, instrlist_t * bb, instr_t * orig);
 
 //void *as_built_lock;
-static int cleancall_count = 0;
+static uint read_count = 0;
+static uint write_count = 0;
 
 DR_EXPORT void
 dr_init(client_id_t id)
@@ -32,14 +35,13 @@ event_exit()
 {
     /* free mutex */
     //dr_mutex_destroy(as_built_lock);
-    dr_printf("Clean calls: %d\n", cleancall_count);
+    dr_printf("Reads: %u, Writes: %u\n", read_count, write_count);
     dr_printf("Exit.");
 }
 
 static void
 read_callback(app_pc addr, uint i)
 {
-
     instr_t instr;
 
     // Get the drcontext
@@ -56,15 +58,66 @@ read_callback(app_pc addr, uint i)
     decode(drcontext, addr, &instr);
 
     // Get memory address
-    int* accessed_mem = (opnd_compute_address(instr_get_src(&instr, i), &mc));
+    ptr_uint_t unaligned = (ptr_uint_t) opnd_compute_address(instr_get_src(&instr, i), &mc);
 
     // Get word-aligned address.
-    //accessed_mem = accessed_mem - (accessed_mem % 4);
+    ptr_uint_t aligned = unaligned - unaligned % 8;
+
+    int* accessed_mem = (int*) aligned;
+
     if (* accessed_mem == SENTINEL) {
-        dr_printf("Got read of %p => 0x%x (pc = %p)\n", accessed_mem, *accessed_mem, addr);
+        if (accessed_mem < mc.xbp + (1<<20) && accessed_mem > mc.xsp - 32) {
+            dr_printf("Stack read of %p => 0x%x (pc = %p, sp = %p, bp = %p)\n", accessed_mem, *accessed_mem, addr, mc.xsp, mc.xbp);
+        } else {
+            dr_printf("Read of %p => 0x%x (pc = %p, sp = %p, bp = %p)\n", accessed_mem, *accessed_mem, addr, mc.xsp, mc.xbp);
+        }
     }
 
-    cleancall_count++;
+    read_count++;
+}
+
+static void
+write_callback(app_pc addr, uint i)
+{
+    instr_t instr;
+
+    // Get the drcontext
+    void* drcontext = dr_get_current_drcontext();
+
+    // Load the memory context.
+    dr_mcontext_t mc;
+    mc.size = sizeof(mc);
+    mc.flags = DR_MC_ALL;
+    dr_get_mcontext(drcontext, &mc);
+
+    // Get the instruction
+    instr_init(drcontext, &instr);
+    decode(drcontext, addr, &instr);
+
+    // Get memory address
+    ptr_uint_t unaligned = (ptr_uint_t) opnd_compute_address(instr_get_dst(&instr, i), &mc);
+
+    // Get word-aligned address.
+    ptr_uint_t aligned = unaligned - unaligned % 8;
+
+    int* accessed_mem = (int*) aligned;
+
+    write_count++;
+
+    if (* accessed_mem == SENTINEL) {
+        if (accessed_mem < mc.xbp + (1<<20) && accessed_mem > mc.xsp - 32) {
+            dr_printf("Stack write of %p => 0x%x (pc = %p, sp = %p, bp = %p)\n", accessed_mem, *accessed_mem, addr, mc.xsp, mc.xbp);
+        } else {
+            dr_printf("Write of %p => 0x%x (pc = %p, sp = %p, bp = %p)\n", accessed_mem, *accessed_mem, addr, mc.xsp, mc.xbp);
+            // Redirect execution.
+            app_pc next = (app_pc)decode_next_pc(drcontext, (byte *)addr);
+            dr_printf("Skipping write, redirecting from %p to %p\n", addr, next);
+            mc.pc = next;
+            dr_redirect_execution(&mc);
+        }
+    }
+
+
 }
 
 static dr_emit_flags_t
@@ -79,6 +132,9 @@ event_basic_block(void *drcontext, void *tag,
 
         if (instr_reads_memory(instr)) {
             instrument_read(drcontext, bb, instr);
+        }
+        if (instr_writes_memory(instr)) {
+            instrument_write(drcontext, bb, instr);
         }
     }
 
@@ -105,6 +161,35 @@ instrument_read(void * drcontext, instrlist_t * bb, instr_t * orig)
                     bb,
                     orig,
                     (void *)read_callback,
+                    false /*no fp save*/,
+                    2,
+                    OPND_CREATE_INTPTR(instr_get_app_pc(orig)),
+                    OPND_CREATE_INT64(i)
+                    );
+        }
+
+    }
+}
+
+static void
+instrument_write(void * drcontext, instrlist_t * bb, instr_t * orig)
+{
+    int i;
+    opnd_t o;
+    app_pc pc = instr_get_app_pc(orig);
+
+    //instr_print(drcontext, orig);
+    //dr_printf("    (PC = %p)\n", pc);
+
+    for (i = 0; i < instr_num_dsts(orig); i++) {
+        o = instr_get_dst(orig, i);
+
+        if (opnd_is_memory_reference(o)) {
+            dr_insert_clean_call(
+                    drcontext,
+                    bb,
+                    orig,
+                    (void *)write_callback,
                     false /*no fp save*/,
                     2,
                     OPND_CREATE_INTPTR(instr_get_app_pc(orig)),
