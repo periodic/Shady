@@ -13,8 +13,8 @@ CFLAGS=-Wall -fPIC -DLINUX -DX86_64 -I $(DYNAMO_DIR)/include
 .c.o :
 	$(CC) $(CFLAGS) -c $<
 
-shady.so: shady.o shady.c
-	$(CC) $(CFLAGS) -shared -Wl,-soname,shady.so -o shady.so $<
+shady.so: shady.o shady_util.o
+	$(CC) $(CFLAGS) -shared -Wl,--whole-archive -Wl,-soname,shady.so -o shady.so $^ -Wl,--no-whole-archive
 
 .PHONY: sploits targets
 sploits:
