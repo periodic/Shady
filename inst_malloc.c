@@ -1,13 +1,13 @@
-#include "dr_api.h"
-#include "drsyms.h"
-#include "drwrap.h"
-#include "hashtable.h"
+#include <dr_api.h>
+#include <drsyms.h>
+#include <drwrap.h>
+#include <hashtable.h>
 
-#include "count_malloc.h"
+#include "defines.h"
+#include "inst_malloc.h"
 
 static const int heap_pre_redzone_size = 8;
 static const int heap_post_redzone_size = 16;
-static const int sentinel_val = 0xdeadbeef;
 
 static hashtable_t mallocd_ptrs[1];
 
@@ -20,21 +20,21 @@ static void fill_sentinel(void *_a, int n) {
   int *a = (int*)_a;
   int i;
   for (i = 0; i < n; ++i) {
-    a[i] = sentinel_val;
+    a[i] = SENTINEL;
   }
 }
 
 static void before_malloc(void *wrapctx, OUT void **user_data) {
   void *arg = drwrap_get_arg(wrapctx, 0);
-  int sz = (int)arg;
+  ptr_uint_t sz = (ptr_uint_t)arg;
   dr_printf ("malloc called with size of %d\n", sz);
-  sz += (sz % sizeof (int));
+  sz += (sz % sizeof (ptr_uint_t));
   dr_printf("rounded up to %d\n", sz);
-  int new_sz = sz + heap_pre_redzone_size + heap_post_redzone_size;
+  ptr_uint_t new_sz = sz + heap_pre_redzone_size + heap_post_redzone_size;
   drwrap_set_arg(wrapctx, 0, (void*)new_sz);
 
   /* save original size request */
-  *(int*)user_data = sz;
+  *(ptr_uint_t*)user_data = sz;
 }
 
 static void after_malloc(void *wrapctx, void *user_data) {
@@ -45,10 +45,10 @@ static void after_malloc(void *wrapctx, void *user_data) {
     return;
   }
 
-  fill_sentinel(ret, heap_pre_redzone_size / sizeof (int));
-  int orig_sz = (int)user_data;
+  fill_sentinel(ret, heap_pre_redzone_size / sizeof (ptr_uint_t));
+  ptr_uint_t orig_sz = (ptr_uint_t)user_data;
   char *new_retval = (char*)ret + heap_pre_redzone_size;
-  fill_sentinel(new_retval + orig_sz, heap_post_redzone_size / sizeof (int));
+  fill_sentinel(new_retval + orig_sz, heap_post_redzone_size / sizeof (ptr_uint_t));
 
   drwrap_set_retval(wrapctx, new_retval);
 
@@ -70,9 +70,9 @@ static void before_free(void *wrapctx, OUT void **user_data) {
     dr_printf("skipping\n");
     drwrap_set_arg(wrapctx, 0, NULL);
   } else {
-    int orig_sz = (int)lookup;
+    ptr_uint_t orig_sz = (ptr_uint_t)lookup;
     dr_printf("filling at %p of sz %d\n", arg, orig_sz);
-    fill_sentinel(arg, orig_sz / sizeof(int)); /* cover user region with sentinel */
+    fill_sentinel(arg, orig_sz / sizeof(ptr_uint_t)); /* cover user region with sentinel */
     char *real_base = (char*)arg - heap_pre_redzone_size;    
     dr_printf("setting free val to %p\n", real_base);
     drwrap_set_arg(wrapctx, 0, real_base);
@@ -83,8 +83,8 @@ static void before_free(void *wrapctx, OUT void **user_data) {
 static void before_test_fn(void *wrapctx, OUT void **user_data) {
   dr_printf("test_fn CALLED\n");
   void *_arg = drwrap_get_arg(wrapctx, 0);
-  int arg = (int)_arg;
-  printf ("arg is %d\n", arg);
+  ptr_uint_t arg = (ptr_uint_t)_arg;
+  printf ("arg is %p\n", _arg);
   drwrap_set_arg(wrapctx, 0, (void*)(arg + 1));
 }
 
@@ -111,7 +111,7 @@ static void module_load_fn(void *drcontext, const module_data_t *mod,
 }
 
 void malloc_init(client_id_t id) {
-  int result = drwrap_init();
+    drwrap_init();
   drsym_init(0);
   dr_register_exit_event(exit_fn);
   dr_register_module_load_event(module_load_fn);

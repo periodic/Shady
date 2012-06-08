@@ -8,12 +8,12 @@ TARGET_DIR=cs155-exploits/targets
 TEST_BIN=$(SPLOIT_DIR)/sploit1
 
 CC=gcc
-CFLAGS=-Wall -fPIC -DLINUX -DX86_64 -I $(DYNAMO_DIR)/include
+CFLAGS=-Wall -fPIC -DLINUX -DX86_64 -I $(DYNAMO_DIR)/include -I $(DYNAMO_DIR)/ext/include
 
 .c.o :
 	$(CC) $(CFLAGS) -c $<
 
-shady.so: shady.o shady_util.o
+shady.so: shady.o shady_util.o inst_malloc.o inst_readwrite.o
 	$(CC) $(CFLAGS) -shared -Wl,--whole-archive -Wl,-soname,shady.so -o shady.so $^ -Wl,--no-whole-archive
 
 .PHONY: sploits targets
