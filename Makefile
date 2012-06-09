@@ -1,20 +1,31 @@
 .SUFFIXES:
 .SUFFIXES: .o .c
 
-DYNAMO_DIR=.
+# needs to provide:
+# ARCH (32 or 64)
+# DR_DIR (path to DynamoRIO root)
+-include LOCAL_VARS
+
 SPLOIT_DIR=cs155-exploits/sploits
 TARGET_DIR=cs155-exploits/targets
 
 TEST_BIN=$(SPLOIT_DIR)/sploit1
 
 CC=gcc
-CFLAGS=-Wall -fPIC -DLINUX -DX86_64 -I $(DYNAMO_DIR)/include -I $(DYNAMO_DIR)/ext/include
+CFLAGS=-Wall -fPIC -DLINUX -DX86_$(ARCH) -I $(DR_DIR)/include -I $(DR_DIR)/ext/include
+
+DR_LIBS=$(DR_DIR)/lib$(ARCH)/release/libdynamorio.so.3.2 \
+ $(DR_DIR)/ext/lib$(ARCH)/release/libdrwrap.so \
+ $(DR_DIR)/ext/lib$(ARCH)/release/libdrmgr.so \
+ $(DR_DIR)/ext/lib$(ARCH)/release/libdrsyms.so \
+ $(DR_DIR)/ext/lib$(ARCH)/release/libdrcontainers.a
 
 .c.o :
 	$(CC) $(CFLAGS) -c $<
 
 shady.so: shady.o shady_util.o inst_malloc.o inst_readwrite.o
-	$(CC) $(CFLAGS) -shared -Wl,--whole-archive -Wl,-soname,shady.so -o shady.so $^ -Wl,--no-whole-archive
+	$(CC) $(CFLAGS) -shared -Wl,-soname,-shady.so \
+	 -o shady.so $^ $(DR_LIBS)
 
 .PHONY: sploits targets
 sploits:
@@ -32,6 +43,6 @@ clean:
 	make -C $(SPLOIT_DIR) clean
 
 run: shady.so
-	$(DYNAMO_DIR)/bin64/drrun -client shady.so 0x1 "" $(TEST_BIN)
+	$(DR_DIR)/bin$(ARCH)/drrun -dr_home $(DR_DIR) -client shady.so 0x1 "" $(TEST_BIN)
 
 simpletest: simpletest.o
