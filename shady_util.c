@@ -7,7 +7,7 @@ is_stack_address(dr_mcontext_t * mcontext, app_pc addr)
     /* This currently contains an egregious hack to detect the base of the
      * stack.  Because I don't know how to get that information I just added 1
      * MB onto the base-pointer. */
-    return ((ptr_int_t)addr < mcontext->xbp + (1<<20) && (ptr_int_t)addr > mcontext->xsp - 32);
+    return ((ptr_int_t)addr < 0xc000000 && (ptr_int_t)addr > mcontext->xsp - 32);
 }
 
 app_pc

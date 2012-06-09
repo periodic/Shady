@@ -1,18 +1,18 @@
 #include <stdio.h>
-
-static unsigned int sentinel = 0xdeadbeef;
-
+#include <stdlib.h>
 
 int
 main (int argc, char** argv)
 {
-    int tmp = sentinel;
+    int i;
+    int* tmp = malloc(sizeof(int));
 
-    printf("%x\n", tmp);
-
-    sentinel = (0x12345678);
-
-    printf("%x\n", sentinel);
+    for (i = 0; i < 4; i++)
+    {
+        printf("Old %i: %x\n", i, tmp[i]);
+        tmp[i] = i;
+        printf("New %i: %x\n", i, tmp[i]);
+    }
 
     return 0;
 }

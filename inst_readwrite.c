@@ -86,9 +86,9 @@ read_callback(app_pc addr, uint i)
 
     if (mem_val == SENTINEL) {
         if (is_stack_address(&mc, accessed_mem)) {
-            dr_printf("Stack read of %p => 0x%x (pc = %p, sp = %p, bp = %p)\n", accessed_mem, *(int*)accessed_mem, addr, mc.xsp, mc.xbp);
+            //dr_printf("Stack read of %p => 0x%x (pc = %p, sp = %p, bp = %p)\n", accessed_mem, *(int*)accessed_mem, addr, mc.xsp, mc.xbp);
         } else {
-            dr_printf("Read of %p => 0x%x (pc = %p, sp = %p, bp = %p)\n", accessed_mem, *(int*)accessed_mem, addr, mc.xsp, mc.xbp);
+            //dr_printf("Read of %p => 0x%x (pc = %p, sp = %p, bp = %p)\n", accessed_mem, *(int*)accessed_mem, addr, mc.xsp, mc.xbp);
         }
     }
 }
@@ -120,7 +120,7 @@ write_callback(app_pc addr, uint i)
 
     if (* (int*)accessed_mem == SENTINEL) {
         if (is_stack_address(&mc, accessed_mem)) {
-            dr_printf("Stack write of %p => 0x%x (pc = %p, sp = %p, bp = %p)\n", accessed_mem, *(int*)accessed_mem, addr, mc.xsp, mc.xbp);
+            //dr_printf("Stack write of %p => 0x%x (pc = %p, sp = %p, bp = %p)\n", accessed_mem, *(int*)accessed_mem, addr, mc.xsp, mc.xbp);
         } else {
             dr_printf("Write of %p => 0x%x (pc = %p, sp = %p, bp = %p)\n", accessed_mem, *(int*)accessed_mem, addr, mc.xsp, mc.xbp);
             // Redirect execution.
@@ -130,8 +130,6 @@ write_callback(app_pc addr, uint i)
             dr_redirect_execution(&mc);
         }
     }
-
-
 }
 
 static void

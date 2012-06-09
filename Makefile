@@ -9,7 +9,7 @@
 SPLOIT_DIR=cs155-exploits/sploits
 TARGET_DIR=cs155-exploits/targets
 
-TEST_BIN=$(SPLOIT_DIR)/sploit1
+TEST_BIN=./simpletest
 
 CC=gcc
 CFLAGS=-Wall -fPIC -DLINUX -DX86_$(ARCH) -I $(DR_DIR)/include -I $(DR_DIR)/ext/include

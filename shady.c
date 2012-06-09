@@ -7,7 +7,7 @@ static void event_exit(void);
 DR_EXPORT void
 dr_init(client_id_t id)
 {
-    //malloc_init(id);
+    malloc_init(id);
     readwrite_init(id);
     dr_register_exit_event(event_exit);
 
