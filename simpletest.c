@@ -1,6 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+
+static unsigned int testvar = 0xdeadbeef;
+
+void
+print_test()
+{
+    printf("Test var: %u\n", testvar);
+}
+
 int
 main (int argc, char** argv)
 {
@@ -10,8 +19,13 @@ main (int argc, char** argv)
     for (i = 0; i < 4; i++)
     {
         printf("Old %i: %x\n", i, tmp[i]);
-        tmp[i] = i;
+        tmp[i] = 0x10101010;
         printf("New %i: %x\n", i, tmp[i]);
+    }
+
+    for (i = 0; i < 4; i++)
+    {
+        print_test();
     }
 
     return 0;

@@ -27,9 +27,9 @@ static void fill_sentinel(void *_a, int n) {
 static void before_malloc(void *wrapctx, OUT void **user_data) {
   void *arg = drwrap_get_arg(wrapctx, 0);
   ptr_uint_t sz = (ptr_uint_t)arg;
-  dr_printf ("malloc called with size of %d\n", sz);
+  DEBUG("malloc called with size of %d\n", sz);
   sz += (sz % sizeof (ptr_uint_t));
-  dr_printf("rounded up to %d\n", sz);
+  DEBUG("rounded up to %d\n", sz);
   ptr_uint_t new_sz = sz + heap_pre_redzone_size + heap_post_redzone_size;
   drwrap_set_arg(wrapctx, 0, (void*)new_sz);
 
@@ -39,7 +39,7 @@ static void before_malloc(void *wrapctx, OUT void **user_data) {
 
 static void after_malloc(void *wrapctx, void *user_data) {
   void *ret = drwrap_get_retval(wrapctx);
-  printf ("malloc returning with ptr %p\n", ret);
+  DEBUG ("malloc returning with ptr %p\n", ret);
   if (ret == NULL) {
     /* TODO: we could try "saving" them here */
     return;
@@ -53,7 +53,7 @@ static void after_malloc(void *wrapctx, void *user_data) {
   drwrap_set_retval(wrapctx, new_retval);
 
   /* We save user base ptr / size */
-  dr_printf ("adding %p to hashtable\n", new_retval);
+  DEBUG ("adding %p to hashtable\n", new_retval);
   hashtable_add(mallocd_ptrs, new_retval, (void*)orig_sz);
 }
 
@@ -62,7 +62,7 @@ static void before_free(void *wrapctx, OUT void **user_data) {
   if (arg == NULL) {
     return; /* This is defined as a no-op */
   }
-  dr_printf ("free called with %p\n", arg);
+  DEBUG("free called with %p\n", arg);
 
   void *lookup = hashtable_lookup(mallocd_ptrs, arg);
   if (lookup == NULL) {
@@ -71,10 +71,10 @@ static void before_free(void *wrapctx, OUT void **user_data) {
     drwrap_set_arg(wrapctx, 0, NULL);
   } else {
     ptr_uint_t orig_sz = (ptr_uint_t)lookup;
-    dr_printf("filling at %p of sz %d\n", arg, orig_sz);
+    DEBUG("filling at %p of sz %d\n", arg, orig_sz);
     fill_sentinel(arg, orig_sz / sizeof(ptr_uint_t)); /* cover user region with sentinel */
     char *real_base = (char*)arg - heap_pre_redzone_size;    
-    dr_printf("setting free val to %p\n", real_base);
+    DEBUG("setting free val to %p\n", real_base);
     drwrap_set_arg(wrapctx, 0, real_base);
     hashtable_remove(mallocd_ptrs, arg);
   }
@@ -84,7 +84,7 @@ static void before_test_fn(void *wrapctx, OUT void **user_data) {
   dr_printf("test_fn CALLED\n");
   void *_arg = drwrap_get_arg(wrapctx, 0);
   ptr_uint_t arg = (ptr_uint_t)_arg;
-  printf ("arg is %p\n", _arg);
+  DEBUG("arg is %p\n", _arg);
   drwrap_set_arg(wrapctx, 0, (void*)(arg + 1));
 }
 
@@ -95,7 +95,7 @@ static void module_load_fn(void *drcontext, const module_data_t *mod,
   if (drsym_lookup_symbol(mod->full_path, "my_test_fn", &modoffs, 0)
       == DRSYM_SUCCESS) {
     app_pc addr = mod->start + modoffs;
-    dr_printf ("Wrapping my_test_fn at %p\n", (void*)addr);
+    DEBUG("Wrapping my_test_fn at %p\n", (void*)addr);
     drwrap_wrap(addr, before_test_fn, NULL);
   }
 

@@ -12,7 +12,7 @@ TARGET_DIR=cs155-exploits/targets
 TEST_BIN=./simpletest
 
 CC=gcc
-CFLAGS=-Wall -fPIC -DLINUX -DX86_$(ARCH) -I $(DR_DIR)/include -I $(DR_DIR)/ext/include
+CFLAGS=-Wall -fPIC -DLINUX -DX86_$(ARCH) $(DEBUG) -I $(DR_DIR)/include -I $(DR_DIR)/ext/include
 
 DR_LIBS=$(DR_DIR)/lib$(ARCH)/release/libdynamorio.so.3.2 \
  $(DR_DIR)/ext/lib$(ARCH)/release/libdrwrap.so \
