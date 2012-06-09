@@ -1,12 +1,18 @@
-static int foo;
-static int a = 31;
-static int b = 57;
+#include <stdio.h>
+
+static unsigned int sentinel = 0xdeadbeef;
+
 
 int
 main (int argc, char** argv)
 {
+    int tmp = sentinel;
 
-    foo = a + b;
+    printf("%x\n", tmp);
 
-    return foo;
+    sentinel = (0x12345678);
+
+    printf("%x\n", sentinel);
+
+    return 0;
 }
