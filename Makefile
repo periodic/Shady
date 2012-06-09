@@ -27,7 +27,7 @@ shady.so: shady.o shady_util.o inst_malloc.o inst_readwrite.o
 	$(CC) $(CFLAGS) -shared -Wl,-soname,-shady.so \
 	 -o shady.so $^ $(DR_LIBS)
 
-test_malloc.so: test_malloc.o inst_malloc.o
+test_malloc.so: test_malloc.o inst_malloc.o inst_stack.o shady_util.o
 	$(CC) $(CFLAGS) -shared -Wl,-soname,-test_malloc.so \
 	 -o test_malloc.so $^ $(DR_LIBS)
 
