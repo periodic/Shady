@@ -105,9 +105,9 @@ read_callback(app_pc addr, uint i)
 
     if (mem_val == SENTINEL) {
         if (is_stack_address(&mc, accessed_mem)) {
-            DEBUG("Stack read of %p => 0x%x (pc = %p, sp = %p, bp = %p)\n", accessed_mem, *(int*)accessed_mem, addr, mc.xsp, mc.xbp);
+            DEBUG("Stack read of sentinel at %p (pc = %p, sp = %p, bp = %p)\n", accessed_mem, addr, mc.xsp, mc.xbp);
         } else {
-            DEBUG("Read of %p => 0x%x (pc = %p, sp = %p, bp = %p)\n", accessed_mem, *(int*)accessed_mem, addr, mc.xsp, mc.xbp);
+            DEBUG("Read of sentinel at %p (pc = %p, sp = %p, bp = %p)\n", accessed_mem, addr, mc.xsp, mc.xbp);
             // Do all reads we are worried about have a destination register?
             if (instr_num_dsts(&instr) > 0) {
                 opnd_t dst = instr_get_dst(&instr, 0);
@@ -118,7 +118,7 @@ read_callback(app_pc addr, uint i)
 
                     // Skip it.
                     app_pc next = (app_pc)decode_next_pc(drcontext, (byte *)addr);
-                    DEBUG("Skipping read, redirecting from %p to %p\n", addr, next);
+                    DEBUG("Replacing read with %i\n", val);
                     mc.pc = next;
                     dr_redirect_execution(&mc);
                 }
@@ -156,10 +156,10 @@ write_callback(app_pc addr, uint i)
         if (is_stack_address(&mc, accessed_mem)) {
             //dr_printf("Stack write of %p => 0x%x (pc = %p, sp = %p, bp = %p)\n", accessed_mem, *(int*)accessed_mem, addr, mc.xsp, mc.xbp);
         } else {
-            DEBUG("Write of %p => 0x%x (pc = %p, sp = %p, bp = %p)\n", accessed_mem, *(int*)accessed_mem, addr, mc.xsp, mc.xbp);
+            DEBUG("Write of sentinel at %p(pc = %p, sp = %p, bp = %p)\n", accessed_mem, addr, mc.xsp, mc.xbp);
             // Redirect execution.
             app_pc next = (app_pc)decode_next_pc(drcontext, (byte *)addr);
-            DEBUG("Skipping write, redirecting from %p to %p\n", addr, next);
+            DEBUG("Skipping write\n", addr, next);
             mc.pc = next;
             dr_redirect_execution(&mc);
         }
