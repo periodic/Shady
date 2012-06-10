@@ -11,6 +11,14 @@ static const int heap_post_redzone_size = 16;
 
 static hashtable_t mallocd_ptrs[1];
 
+static char *my_mallocs[] = {
+  "tmalloc" };
+static int num_mallocs = sizeof my_mallocs / sizeof my_mallocs[0];
+
+static char *my_frees[] = {
+  "tfree" };
+static int num_frees = sizeof my_frees / sizeof my_frees[0];
+
 static void exit_fn() {
   drsym_exit();
   drwrap_exit();
@@ -80,23 +88,35 @@ static void before_free(void *wrapctx, OUT void **user_data) {
   }
 }
 
+/*
 static void before_test_fn(void *wrapctx, OUT void **user_data) {
   dr_printf("test_fn CALLED\n");
   void *_arg = drwrap_get_arg(wrapctx, 0);
   ptr_uint_t arg = (ptr_uint_t)_arg;
   DEBUG("arg is %p\n", _arg);
   drwrap_set_arg(wrapctx, 0, (void*)(arg + 1));
-}
+  }*/
 
 static void module_load_fn(void *drcontext, const module_data_t *mod,
                            bool loaded) {
+
   size_t modoffs;
-  /* random stuff to try drsyms module */
-  if (drsym_lookup_symbol(mod->full_path, "my_test_fn", &modoffs, 0)
-      == DRSYM_SUCCESS) {
-    app_pc addr = mod->start + modoffs;
-    DEBUG("Wrapping my_test_fn at %p\n", (void*)addr);
-    drwrap_wrap(addr, before_test_fn, NULL);
+  int i;
+  for (i = 0; i < num_mallocs; ++i) {
+    dr_printf ("i = %d\n", i);
+    if (drsym_lookup_symbol(mod->full_path, my_mallocs[i], &modoffs, 0)
+        == DRSYM_SUCCESS) {
+      app_pc addr = mod->start + modoffs;
+      drwrap_wrap(addr, before_malloc, after_malloc);
+    }
+  }
+
+  for (i = 0; i < num_frees; ++i) {
+    if (drsym_lookup_symbol(mod->full_path, my_frees[i], &modoffs, 0)
+        == DRSYM_SUCCESS) {
+      app_pc addr = mod->start + modoffs;
+      drwrap_wrap(addr, before_free, NULL);
+    }
   }
 
   app_pc malloc_pc = (app_pc)dr_get_proc_address(mod->start, "malloc");
@@ -111,7 +131,7 @@ static void module_load_fn(void *drcontext, const module_data_t *mod,
 }
 
 void malloc_init(client_id_t id) {
-    drwrap_init();
+  drwrap_init();
   drsym_init(0);
   dr_register_exit_event(exit_fn);
   dr_register_module_load_event(module_load_fn);
