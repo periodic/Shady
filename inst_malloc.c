@@ -19,6 +19,8 @@ static char *my_frees[] = {
   "tfree" };
 static int num_frees = sizeof my_frees / sizeof my_frees[0];
 
+static int malloc_level;
+
 static void exit_fn() {
   drsym_exit();
   drwrap_exit();
@@ -33,6 +35,10 @@ static void fill_sentinel(void *_a, int n) {
 }
 
 static void before_malloc(void *wrapctx, OUT void **user_data) {
+  if (malloc_level++ > 0) {
+    DEBUG("NESTED_MALLOC\n");
+    return;
+  }
   void *arg = drwrap_get_arg(wrapctx, 0);
   ptr_uint_t sz = (ptr_uint_t)arg;
   DEBUG("malloc called with size of %d\n", sz);
@@ -46,6 +52,7 @@ static void before_malloc(void *wrapctx, OUT void **user_data) {
 }
 
 static void after_malloc(void *wrapctx, void *user_data) {
+  malloc_level--;
   void *ret = drwrap_get_retval(wrapctx);
   DEBUG ("malloc returning with ptr %p\n", ret);
   if (ret == NULL) {
@@ -71,7 +78,7 @@ static void before_calloc(void *wrapctx, OUT void **user_data) {
   size_t n = (size_t)n_arg;
   size_t sz = (size_t)sz_arg;
 
-  dr_printf("calloc called with args (%u, %u)\n", n, sz);
+  DEBUG("calloc called with args (%u, %u)\n", n, sz);
 }
 
 static void after_calloc(void *wrapctx, void *user_data) {
@@ -88,7 +95,7 @@ static void before_free(void *wrapctx, OUT void **user_data) {
   void *lookup = hashtable_lookup(mallocd_ptrs, arg);
   if (lookup == NULL) {
     /* We "skip" free by setting arg to NULL */
-    dr_printf("skipping\n");
+    DEBUG("skipping\n");
     drwrap_set_arg(wrapctx, 0, NULL);
   } else {
     ptr_uint_t orig_sz = (ptr_uint_t)lookup;
@@ -102,10 +109,14 @@ static void before_free(void *wrapctx, OUT void **user_data) {
 }
 
 static void before_realloc(void *wrapctx, OUT void **user_data) {
+  if (malloc_level++) {
+    DEBUG("NESTED REALLOC\n");
+    return;
+  }
   void *ptr = drwrap_get_arg(wrapctx, 0);
   void *sz_arg = drwrap_get_arg(wrapctx, 1);
   int sz = (int)sz_arg;
-  dr_printf("realloc called with (%p, %d)\n", ptr, sz);
+  DEBUG("realloc called with (%p, %d)\n", ptr, sz);
 
   if (ptr == NULL && sz == 0) {
     // TODO:  Is this a no-op? Can we just return NULL?
@@ -123,21 +134,22 @@ static void before_realloc(void *wrapctx, OUT void **user_data) {
      args to handle redzones. */
   void *lookup = hashtable_lookup(mallocd_ptrs, ptr);
   if (lookup == NULL) {
+    DEBUG("realloc lookup fail\n");
     // TODO: what if we don't know about this ptr?
     return;
   } else {
     // TODO: debug this code
-    /*
     int real_sz = sz + heap_pre_redzone_size + heap_post_redzone_size;
     char *real_base = (char*)ptr - heap_pre_redzone_size;
     drwrap_set_arg(wrapctx, 0, real_base);
     drwrap_set_arg(wrapctx, 1, (void*)sz);
+    DEBUG("realloc args rewritten to (%p, %d)\n", real_base, real_sz);
     *(int*)user_data = sz;
-    */
   }
 }
 
 static void after_realloc(void *wrapctx, void *user_data) {
+  malloc_level--;
   int sz = (int)user_data;
   if (sz < 0) {
     // TODO: we should use sz < 0 codes to signal that this is a weird
@@ -147,7 +159,7 @@ static void after_realloc(void *wrapctx, void *user_data) {
 
 /*
 static void before_test_fn(void *wrapctx, OUT void **user_data) {
-  dr_printf("test_fn CALLED\n");
+  DEBUG("test_fn CALLED\n");
   void *_arg = drwrap_get_arg(wrapctx, 0);
   ptr_uint_t arg = (ptr_uint_t)_arg;
   DEBUG("arg is %p\n", _arg);
