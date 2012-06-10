@@ -7,7 +7,7 @@ static unsigned int testvar = 0xdeadbeef;
 void
 print_test()
 {
-    printf("Test var: %u\n", testvar);
+    printf("Test var: 0x%x\n", testvar);
 }
 
 int

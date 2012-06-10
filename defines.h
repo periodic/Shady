@@ -7,6 +7,6 @@
 #define DEBUG_ENABLED 0
 #endif
 
-#define DEBUG(fmt, args...) if (DEBUG_ENABLED) dr_printf("%s:%d:%s(): " fmt, __FILE__, __LINE__, __func__, ## args);
+#define DEBUG(fmt, args...) if (DEBUG_ENABLED) dr_fprintf(STDERR, "%s:%d:%s(): " fmt, __FILE__, __LINE__, __func__, ## args);
 
 #endif // DEFINES_H
