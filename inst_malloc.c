@@ -35,10 +35,13 @@ static void fill_sentinel(void *_a, int n) {
 }
 
 static void before_malloc(void *wrapctx, OUT void **user_data) {
+  print_mem_registers(NULL, "before_malloc start.");
+
   if (malloc_level++ > 0) {
     DEBUG("NESTED_MALLOC\n");
     return;
   }
+
   void *arg = drwrap_get_arg(wrapctx, 0);
   ptr_uint_t sz = (ptr_uint_t)arg;
   DEBUG("malloc called with size of %d\n", sz);
@@ -46,17 +49,23 @@ static void before_malloc(void *wrapctx, OUT void **user_data) {
       sz += sizeof(ptr_uint_t) - (sz % sizeof (ptr_uint_t));
       DEBUG("rounded up to %d\n", sz);
   }
+
   ptr_uint_t new_sz = sz + heap_pre_redzone_size + heap_post_redzone_size;
   drwrap_set_arg(wrapctx, 0, (void*)new_sz);
 
   /* save original size request */
   *(ptr_uint_t*)user_data = sz;
+
+  print_mem_registers(NULL, "before_malloc end.");
 }
 
 static void after_malloc(void *wrapctx, void *user_data) {
+  print_mem_registers(NULL, "after_malloc start");
+
   malloc_level--;
   void *ret = drwrap_get_retval(wrapctx);
   DEBUG ("malloc returning with ptr %p\n", ret);
+
   if (ret == NULL) {
     /* TODO: we could try "saving" them here */
     return;
@@ -72,6 +81,8 @@ static void after_malloc(void *wrapctx, void *user_data) {
   /* We save user base ptr / size */
   DEBUG ("adding %p to hashtable\n", new_retval);
   hashtable_add(mallocd_ptrs, new_retval, (void*)orig_sz);
+
+  print_mem_registers(NULL, "after_malloc end");
 }
 
 static void before_calloc(void *wrapctx, OUT void **user_data) {
@@ -88,6 +99,7 @@ static void after_calloc(void *wrapctx, void *user_data) {
 }
 
 static void before_free(void *wrapctx, OUT void **user_data) {
+  print_mem_registers(NULL, "before_free start.");
   void *arg = drwrap_get_arg(wrapctx, 0);
   if (arg == NULL) {
     return; /* This is defined as a no-op */
@@ -101,13 +113,14 @@ static void before_free(void *wrapctx, OUT void **user_data) {
     drwrap_set_arg(wrapctx, 0, NULL);
   } else {
     ptr_uint_t orig_sz = (ptr_uint_t)lookup;
-    DEBUG("filling at %p of sz %d\n", arg, orig_sz);
-    fill_sentinel(arg, orig_sz / sizeof(ptr_uint_t)); /* cover user region with sentinel */
+    //DEBUG("filling at %p of sz %d\n", arg, orig_sz);
+    //fill_sentinel(arg, orig_sz / sizeof(ptr_uint_t)); /* cover user region with sentinel */
     char *real_base = (char*)arg - heap_pre_redzone_size;    
     DEBUG("setting free val to %p\n", real_base);
     drwrap_set_arg(wrapctx, 0, real_base);
     hashtable_remove(mallocd_ptrs, arg);
   }
+  print_mem_registers(NULL, "before_free end.");
 }
 
 static void before_realloc(void *wrapctx, OUT void **user_data) {
