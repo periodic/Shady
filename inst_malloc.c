@@ -65,6 +65,19 @@ static void after_malloc(void *wrapctx, void *user_data) {
   hashtable_add(mallocd_ptrs, new_retval, (void*)orig_sz);
 }
 
+static void before_calloc(void *wrapctx, OUT void **user_data) {
+  void *n_arg = drwrap_get_arg(wrapctx, 0);
+  void *sz_arg = drwrap_get_arg(wrapctx, 1);
+  size_t n = (size_t)n_arg;
+  size_t sz = (size_t)sz_arg;
+
+  dr_printf("calloc called with args (%u, %u)\n", n, sz);
+}
+
+static void after_calloc(void *wrapctx, void *user_data) {
+  // TODO
+}
+
 static void before_free(void *wrapctx, OUT void **user_data) {
   void *arg = drwrap_get_arg(wrapctx, 0);
   if (arg == NULL) {
@@ -85,6 +98,50 @@ static void before_free(void *wrapctx, OUT void **user_data) {
     DEBUG("setting free val to %p\n", real_base);
     drwrap_set_arg(wrapctx, 0, real_base);
     hashtable_remove(mallocd_ptrs, arg);
+  }
+}
+
+static void before_realloc(void *wrapctx, OUT void **user_data) {
+  void *ptr = drwrap_get_arg(wrapctx, 0);
+  void *sz_arg = drwrap_get_arg(wrapctx, 1);
+  int sz = (int)sz_arg;
+  dr_printf("realloc called with (%p, %d)\n", ptr, sz);
+
+  if (ptr == NULL && sz == 0) {
+    // TODO:  Is this a no-op? Can we just return NULL?
+    return;
+  }
+  if (ptr == NULL) {
+    // TODO: this is really a malloc(sz)
+    return;
+  }
+  if (sz == 0) {
+    // TODO: this is really a free(ptr)
+    return;
+  }
+  /* At this point we know this is a real realloc. We need to update
+     args to handle redzones. */
+  void *lookup = hashtable_lookup(mallocd_ptrs, ptr);
+  if (lookup == NULL) {
+    // TODO: what if we don't know about this ptr?
+    return;
+  } else {
+    // TODO: debug this code
+    /*
+    int real_sz = sz + heap_pre_redzone_size + heap_post_redzone_size;
+    char *real_base = (char*)ptr - heap_pre_redzone_size;
+    drwrap_set_arg(wrapctx, 0, real_base);
+    drwrap_set_arg(wrapctx, 1, (void*)sz);
+    *(int*)user_data = sz;
+    */
+  }
+}
+
+static void after_realloc(void *wrapctx, void *user_data) {
+  int sz = (int)user_data;
+  if (sz < 0) {
+    // TODO: we should use sz < 0 codes to signal that this is a weird
+    // realloc 
   }
 }
 
@@ -121,6 +178,16 @@ static void module_load_fn(void *drcontext, const module_data_t *mod,
   app_pc malloc_pc = (app_pc)dr_get_proc_address(mod->start, "malloc");
   if (malloc_pc != NULL) {
     drwrap_wrap(malloc_pc, before_malloc, after_malloc);
+  }
+
+  app_pc calloc_pc = (app_pc)dr_get_proc_address(mod->start, "calloc");
+  if (calloc_pc != NULL) {
+    drwrap_wrap(calloc_pc, before_calloc, after_calloc);
+  }
+
+  app_pc realloc_pc = (app_pc)dr_get_proc_address(mod->start, "realloc");
+  if (realloc_pc != NULL) {
+    drwrap_wrap(realloc_pc, before_realloc, after_realloc);
   }
 
   app_pc free_pc = (app_pc)dr_get_proc_address(mod->start, "free");
