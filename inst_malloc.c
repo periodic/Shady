@@ -28,7 +28,7 @@ static void before_malloc(void *wrapctx, OUT void **user_data) {
   void *arg = drwrap_get_arg(wrapctx, 0);
   ptr_uint_t sz = (ptr_uint_t)arg;
   DEBUG("malloc called with size of %d\n", sz);
-  sz += (sz % sizeof (ptr_uint_t));
+  sz += sizeof(ptr_uint_t) - (sz % sizeof (ptr_uint_t));
   DEBUG("rounded up to %d\n", sz);
   ptr_uint_t new_sz = sz + heap_pre_redzone_size + heap_post_redzone_size;
   drwrap_set_arg(wrapctx, 0, (void*)new_sz);
