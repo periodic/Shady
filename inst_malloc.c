@@ -103,7 +103,6 @@ static void module_load_fn(void *drcontext, const module_data_t *mod,
   size_t modoffs;
   int i;
   for (i = 0; i < num_mallocs; ++i) {
-    dr_printf ("i = %d\n", i);
     if (drsym_lookup_symbol(mod->full_path, my_mallocs[i], &modoffs, 0)
         == DRSYM_SUCCESS) {
       app_pc addr = mod->start + modoffs;
