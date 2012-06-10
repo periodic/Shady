@@ -11,17 +11,14 @@
 static void event_exit();
 static dr_emit_flags_t event_basic_block(void *drcontext, void *tag, instrlist_t *bb, bool for_trace, bool translating);
 
-static void instrument_read(void * drcontext, void* tag, instrlist_t * bb, instr_t * orig);
-static void instrument_write(void * drcontext, void* tag, instrlist_t * bb, instr_t * orig);
+static void instrument_read(void * drcontext, instrlist_t * bb, instr_t * orig);
+static void instrument_write(void * drcontext, instrlist_t * bb, instr_t * orig);
 
-static void read_callback(app_pc addr, void* tag, uint i);
-static void write_callback(app_pc addr, void* tag, uint i);
+static void read_callback(app_pc addr, uint i);
+static void write_callback(app_pc addr, uint i);
 
 static uint read_count = 0;
 static uint write_count = 0;
-
-static void* current_trace_tag = 0;
-static uint  current_trace_errors = 0;
 
 static void skip_instruction(void* drcontext, dr_mcontext_t* mc, app_pc addr);
 
@@ -60,15 +57,17 @@ event_basic_block(void *drcontext, void *tag,
 {
     instr_t *instr, *next_instr;
 
+    DEBUG("Instrumenting block %p.\n", tag);
+
     /* count the number of instructions in this block */
     for (instr = instrlist_first(bb); instr != NULL; instr = next_instr) {
         next_instr = instr_get_next(instr);
 
         if (instr_reads_memory(instr)) {
-            instrument_read(drcontext, tag, bb, instr);
+            instrument_read(drcontext, bb, instr);
         }
         if (instr_writes_memory(instr)) {
-            instrument_write(drcontext, tag, bb, instr);
+            instrument_write(drcontext, bb, instr);
         }
     }
 
@@ -77,9 +76,11 @@ event_basic_block(void *drcontext, void *tag,
 
 
 static void
-read_callback(app_pc addr, void* tag, uint i)
+read_callback(app_pc addr, uint i)
 {
     instr_t instr;
+
+    DEBUG("Read callback at %p.\n", addr);
 
     // Get the drcontext
     void* drcontext = dr_get_current_drcontext();
@@ -89,17 +90,6 @@ read_callback(app_pc addr, void* tag, uint i)
     mc.size = sizeof(mc);
     mc.flags = DR_MC_ALL;
     dr_get_mcontext(drcontext, &mc);
-
-    if (tag == current_trace_tag) {
-        if (current_trace_errors > MAX_TRACE_ERRORS) {
-            DEBUG("Skipping read in trace %p.  Current errors: %u.\n", current_trace_tag, current_trace_errors);
-            skip_instruction(drcontext, &mc, addr);
-            return;
-        }
-    } else {
-        current_trace_tag = tag;
-        current_trace_errors = 0;
-    }
 
     // Get the instruction
     instr_init(drcontext, &instr);
@@ -110,28 +100,24 @@ read_callback(app_pc addr, void* tag, uint i)
     int mem_val = *(int*)accessed_mem;
 
     if (mem_val == SENTINEL) {
-        current_trace_errors++;
         // Increment the counter
         read_count++;
         if (is_stack_address(&mc, accessed_mem)) {
-            DEBUG("Stack read of sentinel at %p (pc = %p, sp = %p, bp = %p, tag = %p)\n", accessed_mem, addr, mc.xsp, mc.xbp, tag);
+            DEBUG("Stack read of sentinel at %p (pc = %p, sp = %p, bp = %p)\n", accessed_mem, addr, mc.xsp, mc.xbp);
         } else {
-            DEBUG("Read of sentinel at %p (pc = %p, sp = %p, bp = %p, tag = %p, errors = %i)\n", accessed_mem, addr, mc.xsp, mc.xbp, tag, current_trace_errors);
+            DEBUG("Read of sentinel at %p (pc = %p, sp = %p, bp = %p)\n", accessed_mem, addr, mc.xsp, mc.xbp);
             // Do all reads we are worried about have a destination register?
             if (instr_num_dsts(&instr) > 0) {
                 opnd_t dst = instr_get_dst(&instr, 0);
                 if (opnd_is_reg(dst)) {
                     // set register value.
                     int val = get_read_value(addr);
+                    /*
                     reg_set_value(opnd_get_reg(dst), &mc, val);
 
                     // Skip it.
                     DEBUG("Replacing read with %i\n", val);
                     skip_instruction(drcontext, &mc, addr);
-                    /*
-                    app_pc next = (app_pc)decode_next_pc(drcontext, (byte *)addr);
-                    mc.pc = next;
-                    dr_redirect_execution(&mc);
                     */
                 }
             }
@@ -140,11 +126,12 @@ read_callback(app_pc addr, void* tag, uint i)
 }
 
 static void
-write_callback(app_pc addr, void* tag, uint i)
+write_callback(app_pc addr, uint i)
 {
 
     instr_t instr;
 
+    DEBUG("Write callback at %p.\n", addr);
     // Get the drcontext
     void* drcontext = dr_get_current_drcontext();
 
@@ -154,17 +141,6 @@ write_callback(app_pc addr, void* tag, uint i)
     mc.flags = DR_MC_ALL;
     dr_get_mcontext(drcontext, &mc);
 
-    if (tag == current_trace_tag) {
-        if (current_trace_errors > MAX_TRACE_ERRORS) {
-            DEBUG("Skipping write in trace %p.  Current errors: %u.\n", current_trace_tag, current_trace_errors);
-            skip_instruction(drcontext, &mc, addr);
-            return;
-        }
-    } else {
-        current_trace_tag = tag;
-        current_trace_errors = 0;
-    }
-
     // Get the instruction
     instr_init(drcontext, &instr);
     decode(drcontext, addr, &instr);
@@ -172,28 +148,27 @@ write_callback(app_pc addr, void* tag, uint i)
     // Get word-aligned address.
     app_pc accessed_mem = align_ptr(opnd_compute_address(instr_get_dst(&instr, i), &mc));
 
+    DEBUG("Checking write value %p (pc = %p, sp = %p, bp = %p).\n", accessed_mem, addr, mc.xsp, mc.xbp);
+
     if (* (int*)accessed_mem == SENTINEL) {
-        current_trace_errors++;
         // Increment the counter.
         write_count++;
         if (is_stack_address(&mc, accessed_mem)) {
-            DEBUG("Stack write sentinel at %p (pc = %p, sp = %p, bp = %p, tag = %p)\n", accessed_mem, addr, mc.xsp, mc.xbp, tag);
+            DEBUG("Stack write sentinel at %p (pc = %p, sp = %p, bp = %p)\n", accessed_mem, addr, mc.xsp, mc.xbp);
         } else {
-            DEBUG("Write of sentinel at %p (pc = %p, sp = %p, bp = %p, tag = %p)\n", accessed_mem, addr, mc.xsp, mc.xbp, tag);
+            DEBUG("Write of sentinel at %p (pc = %p, sp = %p, bp = %p)\n", accessed_mem, addr, mc.xsp, mc.xbp);
             // Redirect execution.
+            /*
             DEBUG("Skipping write\n");
             skip_instruction(drcontext, &mc, addr);
-            /*
-            app_pc next = (app_pc)decode_next_pc(drcontext, (byte *)addr);
-            mc.pc = next;
-            dr_redirect_execution(&mc);
             */
         }
     }
+    DEBUG("Write callback complete at %p.\n", addr);
 }
 
 static void
-instrument_read(void * drcontext, void* tag, instrlist_t * bb, instr_t * orig)
+instrument_read(void * drcontext, instrlist_t * bb, instr_t * orig)
 {
     uint i;
     opnd_t o;
@@ -209,9 +184,8 @@ instrument_read(void * drcontext, void* tag, instrlist_t * bb, instr_t * orig)
                     orig,
                     (void *)read_callback,
                     false /*no fp save*/,
-                    3,
+                    2,
                     OPND_CREATE_INTPTR(instr_get_app_pc(orig)),
-                    OPND_CREATE_INTPTR(tag),
                     OPND_CREATE_INT32(i)
                     );
         }
@@ -220,7 +194,7 @@ instrument_read(void * drcontext, void* tag, instrlist_t * bb, instr_t * orig)
 }
 
 static void
-instrument_write(void * drcontext, void* tag, instrlist_t * bb, instr_t * orig)
+instrument_write(void * drcontext, instrlist_t * bb, instr_t * orig)
 {
     uint i;
     opnd_t o;
@@ -235,9 +209,8 @@ instrument_write(void * drcontext, void* tag, instrlist_t * bb, instr_t * orig)
                     orig,
                     (void *)write_callback,
                     false /*no fp save*/,
-                    3,
+                    2,
                     OPND_CREATE_INTPTR(instr_get_app_pc(orig)),
-                    OPND_CREATE_INTPTR(tag),
                     OPND_CREATE_INT32(i)
                     );
         }
