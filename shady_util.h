@@ -6,6 +6,9 @@ app_pc align_ptr(app_pc);
 
 // Printing helpers.
 #define char_buf_size 128
+
+void print_mem_registers(dr_mcontext_t * mc, const char* prefix);
+
 char* opnd_string(opnd_t);
 void instr_print(void*, instr_t *);
 bool instr_is_stack_op(instr_t *instr);
