@@ -1,0 +1,52 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{amstext}
+\usepackage{amsmath}
+\usepackage{enumerate}
+\usepackage{fancyhdr}
+
+\newcommand{\thetitle}{Shady: A dynamic instrumentation tool for failure oblivous programming}
+\newcommand{\theauthor}{Andrew Haven (ahaven), Carl Case (cbcase)}
+
+\title{\thetitle}
+\author{\theauthor}
+
+\pagestyle{fancy}
+\fancyhead[L]{Haven, Case}
+\fancyhead[C]{\thetitle}
+\fancyhead[R]{\thepage}
+
+
+\newcommand{\code}[1]{\texttt{#1}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Failure oblivious programming observes that most programs are build to handle errors.  The use of exceptions and error checking routines mean that many errors do not propagate more than a short distance through the code, particularly in the case of reqeust-response programs where errors tend not to escape a single iteration of the loop.  The failure oblivious approach is to take errors that would traditionally be security or terminal errors and discard the offending instruction, manufacturing output if the instruction has output.  Many programs are able to work under this paradigm and critical security vulnerabilities can be avoided.
+
+We present Shady, a dynamic instrumentation tool built on the DynamoRIO instrumentation platform. %ref
+It allows us to modify program behavior at runtime at the binary level.  With this tool we show that we can avoid the same error in Pine that the original authors of the static failure oblivious tool were able to prevent.
+\end{abstract}
+
+% What are we trying to say this report.
+%   What is DynamoRIO?
+%       Why Was DynamoRIO useful and a good fit for our project?  
+%       What were the alternatives?
+%       What were our impressions and experiences when using it?
+%   What did we implement?
+%       What were our goals?
+%       What and how did we implement our FO instrumentation?
+%       What did we choose to avoid implementing?
+%       What did we find easy to implement?  hard?
+%   How well did it work?
+%       What programs did we test?
+%       What were our results?
+%       How well did it work?
+%   Future work
+%       What do we think could be easily implemented in the future?
+%       What would be hard to do?
+
+
+
+\end{document}
