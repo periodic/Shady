@@ -107,13 +107,13 @@ read_callback(app_pc addr, uint i)
     if (! try_read(accessed_mem, &accessed_val)) {
         DEBUG("Read of unaccessable value at %p (pc = %p, sp = %p, bp = %p)\n", accessed_mem, addr, mc.xsp, mc.xbp);
         read_count++;
-        //skip_read(drcontext, &mc, addr, &instr);
+        skip_read(drcontext, &mc, addr, &instr);
     } else 
     if (accessed_val == SENTINEL) {
         // Increment the counter
         DEBUG("Read of sentinel at %p (pc = %p, sp = %p, bp = %p)\n", accessed_mem, addr, mc.xsp, mc.xbp);
         read_count++;
-        //skip_read(drcontext, &mc, addr, &instr);
+        skip_read(drcontext, &mc, addr, &instr);
     }
 
     TRACE("Read callback complete for %p.\n", addr);
@@ -148,13 +148,13 @@ write_callback(app_pc addr, uint i)
     if (! try_read(accessed_mem, &accessed_val)) {
         DEBUG("Write of unaccessable value at %p (pc = %p, sp = %p, bp = %p)\n", accessed_mem, addr, mc.xsp, mc.xbp);
         write_count++;
-        //skip_write(drcontext, &mc, addr, &instr);
+        skip_write(drcontext, &mc, addr, &instr);
     } else 
     if (accessed_val == SENTINEL) {
         // Increment the counter.
         DEBUG("Write of sentinel at %p (pc = %p, sp = %p, bp = %p)\n", accessed_mem, addr, mc.xsp, mc.xbp);
         write_count++;
-        //skip_write(drcontext, &mc, addr, &instr);
+        skip_write(drcontext, &mc, addr, &instr);
     }
 
     TRACE("Write callback complete for %p.\n", addr);

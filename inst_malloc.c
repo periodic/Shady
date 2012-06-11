@@ -8,7 +8,7 @@
 #include "inst_malloc.h"
 #include "shady_util.h"
 
-static const int heap_pre_redzone_size = 8;
+static const int heap_pre_redzone_size = 0;
 static const int heap_post_redzone_size = 16;
 
 static hashtable_t mallocd_ptrs[1];

@@ -41,7 +41,7 @@ targets:
 	make -C $(TARGET_DIR) all
 	cp $(TARGET_DIR)/target[0-9] /tmp
 
-all: shady.so test_malloc.so simpletest
+all: shady.so simpletest
 
 clean:
 	rm -f *.o shady
