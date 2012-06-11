@@ -8,6 +8,8 @@ all: $(PDF_FILES)
 # Make a PDF from our tex file.  This requires the graphs.
 %.pdf: %.tex graphs
 	pdflatex -interaction batchmode $<
+	bibtex $(patsubst %.tex,%.aux,$<)
+	pdflatex -interaction batchmode $<
 
 # Make a tex file from a markdown file.
 protocol.tex: $(MD_FILES)
