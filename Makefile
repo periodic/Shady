@@ -20,6 +20,8 @@ DR_LIBS=$(DR_DIR)/lib$(ARCH)/release/libdynamorio.so.3.2 \
  $(DR_DIR)/ext/lib$(ARCH)/release/libdrsyms.so \
  $(DR_DIR)/ext/lib$(ARCH)/release/libdrcontainers.a
 
+default: all
+
 .c.o :
 	$(CC) $(CFLAGS) -c $<
 
@@ -39,7 +41,7 @@ targets:
 	make -C $(TARGET_DIR) all
 	cp $(TARGET_DIR)/target[0-9] /tmp
 
-all: shady.so simpletest
+all: shady.so test_malloc.so simpletest
 
 clean:
 	rm -f *.o shady
