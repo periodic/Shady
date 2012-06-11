@@ -38,6 +38,7 @@ static void fill_sentinel(void *_a, int n) {
 
 static void before_malloc(void *wrapctx, OUT void **user_data) {
   print_mem_registers(NULL, "before_malloc start.");
+  DEBUG("Malloc level is %d\n", malloc_level);
 
   if (malloc_level++ > 0) {
     DEBUG("NESTED BEFORE_MALLOC\n");
@@ -64,6 +65,7 @@ static void before_malloc(void *wrapctx, OUT void **user_data) {
 
 static void after_malloc(void *wrapctx, void *user_data) {
   print_mem_registers(NULL, "after_malloc start");
+  DEBUG("malloc level is %d\n", malloc_level);
   if (--malloc_level > 0) {
     DEBUG("NESTED AFTER_MALLOC\n");
     return;
@@ -101,6 +103,25 @@ static void before_calloc(void *wrapctx, OUT void **user_data) {
   size_t sz = (size_t)sz_arg;
 
   DEBUG("calloc called with args (%u, %u)\n", n, sz);
+
+  int total_sz = n * sz;
+  int mod = total_sz % sizeof (ptr_uint_t);
+  if (mod != 0) {
+    total_sz += sizeof(ptr_uint_t) - mod;
+  }
+  DEBUG("Rounded up to total size of %d\n", total_sz);
+
+  ptr_uint_t new_sz = total_sz + heap_pre_redzone_size +
+    heap_post_redzone_size;
+  drwrap_set_arg(wrapctx, 0, (void*)new_sz);
+  drwrap_set_arg(wrapctx, 1, (void*)1);
+
+  drwrap_set_arg(wrapctx, 0, (void*)new_sz);
+
+  /* save original size request */
+  *(ptr_uint_t*)user_data = total_sz;
+
+  print_mem_registers(NULL, "before_calloc end.");
 }
 
 static void after_calloc(void *wrapctx, void *user_data) {
@@ -108,11 +129,31 @@ static void after_calloc(void *wrapctx, void *user_data) {
     DEBUG("NESTED AFTER_CALLOC\n");
     return;
   }
-  // TODO
+  void *ret = drwrap_get_retval(wrapctx);
+  DEBUG("malloc returning with ptr %p\n", ret);
+
+  if (ret == NULL) {
+    /* TODO: we could try "saving" them here */
+    return;
+  }
+
+  fill_sentinel(ret, heap_pre_redzone_size / sizeof (ptr_uint_t));
+  int orig_sz = (int)user_data;
+  char *new_retval = (char*)ret + heap_pre_redzone_size;
+  fill_sentinel(new_retval + orig_sz, heap_post_redzone_size / sizeof (ptr_uint_t));
+
+  drwrap_set_retval(wrapctx, new_retval);
+
+  /* We save user base ptr / size */
+  DEBUG ("adding %p to hashtable\n", new_retval);
+  hashtable_add(mallocd_ptrs, new_retval, (void*)orig_sz);
+
+  print_mem_registers(NULL, "after_calloc end");
 }
 
 static void before_free(void *wrapctx, OUT void **user_data) {
   print_mem_registers(NULL, "before_free start.");
+  DEBUG("malloc_level is %d\n", malloc_level);
   if (malloc_level++ > 0) {
     DEBUG("NESTED BEFORE_FREE\n");
     return;
@@ -144,6 +185,8 @@ static void before_free(void *wrapctx, OUT void **user_data) {
 }
 
 static void after_free(void *wrapctx, void *user_data) {
+  print_mem_registers(NULL, "after_free start");
+  DEBUG("malloc_level is %d\n", malloc_level);
   malloc_level--;
 }
 
@@ -249,7 +292,7 @@ static void module_load_fn(void *drcontext, const module_data_t *mod,
     if (drsym_lookup_symbol(mod->full_path, my_frees[i], &modoffs, 0)
         == DRSYM_SUCCESS) {
       app_pc addr = mod->start + modoffs;
-      drwrap_wrap(addr, before_free, NULL);
+      drwrap_wrap(addr, before_free, after_free);
     }
   }
 
