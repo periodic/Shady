@@ -2,9 +2,11 @@
 #include <drsyms.h>
 #include <drwrap.h>
 #include <hashtable.h>
+#include <string.h>
 
 #include "defines.h"
 #include "inst_malloc.h"
+#include "shady_util.h"
 
 static const int heap_pre_redzone_size = 8;
 static const int heap_post_redzone_size = 16;
@@ -35,33 +37,47 @@ static void fill_sentinel(void *_a, int n) {
 }
 
 static void before_malloc(void *wrapctx, OUT void **user_data) {
+  print_mem_registers(NULL, "before_malloc start.");
+
   if (malloc_level++ > 0) {
-    DEBUG("NESTED_MALLOC\n");
+    DEBUG("NESTED BEFORE_MALLOC\n");
     return;
   }
+
   void *arg = drwrap_get_arg(wrapctx, 0);
   ptr_uint_t sz = (ptr_uint_t)arg;
   DEBUG("malloc called with size of %d\n", sz);
-  sz += sizeof(ptr_uint_t) - (sz % sizeof (ptr_uint_t));
+  int mod = sz % sizeof (ptr_uint_t);
+  if (mod != 0) {
+    sz += sizeof(ptr_uint_t) - mod;
+  }
   DEBUG("rounded up to %d\n", sz);
+
   ptr_uint_t new_sz = sz + heap_pre_redzone_size + heap_post_redzone_size;
   drwrap_set_arg(wrapctx, 0, (void*)new_sz);
 
   /* save original size request */
   *(ptr_uint_t*)user_data = sz;
+
+  print_mem_registers(NULL, "before_malloc end.");
 }
 
 static void after_malloc(void *wrapctx, void *user_data) {
-  malloc_level--;
+  print_mem_registers(NULL, "after_malloc start");
+  if (--malloc_level > 0) {
+    DEBUG("NESTED AFTER_MALLOC\n");
+    return;
+  }
   void *ret = drwrap_get_retval(wrapctx);
-  DEBUG ("malloc returning with ptr %p\n", ret);
+  DEBUG("malloc returning with ptr %p\n", ret);
+
   if (ret == NULL) {
     /* TODO: we could try "saving" them here */
     return;
   }
 
   fill_sentinel(ret, heap_pre_redzone_size / sizeof (ptr_uint_t));
-  ptr_uint_t orig_sz = (ptr_uint_t)user_data;
+  int orig_sz = (int)user_data;
   char *new_retval = (char*)ret + heap_pre_redzone_size;
   fill_sentinel(new_retval + orig_sz, heap_post_redzone_size / sizeof (ptr_uint_t));
 
@@ -70,9 +86,15 @@ static void after_malloc(void *wrapctx, void *user_data) {
   /* We save user base ptr / size */
   DEBUG ("adding %p to hashtable\n", new_retval);
   hashtable_add(mallocd_ptrs, new_retval, (void*)orig_sz);
+
+  print_mem_registers(NULL, "after_malloc end");
 }
 
 static void before_calloc(void *wrapctx, OUT void **user_data) {
+  if (malloc_level++ > 0) {
+    DEBUG("NESTED BEFORE_CALLOC\n");
+    return;
+  }
   void *n_arg = drwrap_get_arg(wrapctx, 0);
   void *sz_arg = drwrap_get_arg(wrapctx, 1);
   size_t n = (size_t)n_arg;
@@ -82,10 +104,20 @@ static void before_calloc(void *wrapctx, OUT void **user_data) {
 }
 
 static void after_calloc(void *wrapctx, void *user_data) {
+  if (--malloc_level > 0) {
+    DEBUG("NESTED AFTER_CALLOC\n");
+    return;
+  }
   // TODO
 }
 
 static void before_free(void *wrapctx, OUT void **user_data) {
+  print_mem_registers(NULL, "before_free start.");
+  if (malloc_level++ > 0) {
+    DEBUG("NESTED BEFORE_FREE\n");
+    return;
+  }
+
   void *arg = drwrap_get_arg(wrapctx, 0);
   if (arg == NULL) {
     return; /* This is defined as a no-op */
@@ -98,25 +130,37 @@ static void before_free(void *wrapctx, OUT void **user_data) {
     DEBUG("skipping\n");
     drwrap_set_arg(wrapctx, 0, NULL);
   } else {
-    ptr_uint_t orig_sz = (ptr_uint_t)lookup;
-    DEBUG("filling at %p of sz %d\n", arg, orig_sz);
-    fill_sentinel(arg, orig_sz / sizeof(ptr_uint_t)); /* cover user region with sentinel */
-    char *real_base = (char*)arg - heap_pre_redzone_size;    
+    int orig_sz = (int)lookup;
+    char *real_base = (char*)arg - heap_pre_redzone_size;
+    /* zero out to avoid false positives */
+    memset(real_base, 0, heap_pre_redzone_size +
+           heap_post_redzone_size + orig_sz);           
+
     DEBUG("setting free val to %p\n", real_base);
     drwrap_set_arg(wrapctx, 0, real_base);
     hashtable_remove(mallocd_ptrs, arg);
   }
+  print_mem_registers(NULL, "before_free end.");
+}
+
+static void after_free(void *wrapctx, void *user_data) {
+  malloc_level--;
 }
 
 static void before_realloc(void *wrapctx, OUT void **user_data) {
-  if (malloc_level++) {
-    DEBUG("NESTED REALLOC\n");
+  if (malloc_level++ > 0) {
+    DEBUG("NESTED BEFORE_REALLOC\n");
     return;
   }
   void *ptr = drwrap_get_arg(wrapctx, 0);
   void *sz_arg = drwrap_get_arg(wrapctx, 1);
   int sz = (int)sz_arg;
   DEBUG("realloc called with (%p, %d)\n", ptr, sz);
+  int mod = sz % sizeof (ptr_uint_t);
+  if (mod != 0) {
+    sz += sizeof(ptr_uint_t) - mod;
+  }
+  DEBUG("rounded up to size %d\n", sz);
 
   if (ptr == NULL && sz == 0) {
     // TODO:  Is this a no-op? Can we just return NULL?
@@ -127,7 +171,10 @@ static void before_realloc(void *wrapctx, OUT void **user_data) {
     return;
   }
   if (sz == 0) {
-    // TODO: this is really a free(ptr)
+    // TODO: this doesn't touch the hashmap or anything
+    char *real_base = (char*)ptr - heap_pre_redzone_size;
+    drwrap_set_arg(wrapctx, 0, real_base);
+    *(int*)user_data = sz;
     return;
   }
   /* At this point we know this is a real realloc. We need to update
@@ -141,16 +188,35 @@ static void before_realloc(void *wrapctx, OUT void **user_data) {
     // TODO: debug this code
     int real_sz = sz + heap_pre_redzone_size + heap_post_redzone_size;
     char *real_base = (char*)ptr - heap_pre_redzone_size;
+    int prev_sz = (int)lookup;
+
+    /* remove old red zone so it doesn't lead to false positive */
+    memset((char*)ptr + prev_sz, 0, heap_post_redzone_size);
+
     drwrap_set_arg(wrapctx, 0, real_base);
-    drwrap_set_arg(wrapctx, 1, (void*)sz);
+    drwrap_set_arg(wrapctx, 1, (void*)real_sz);
     DEBUG("realloc args rewritten to (%p, %d)\n", real_base, real_sz);
     *(int*)user_data = sz;
   }
 }
 
 static void after_realloc(void *wrapctx, void *user_data) {
-  malloc_level--;
+  if (--malloc_level > 0) {
+    DEBUG("NESTED AFTER_REALLOC\n");
+    return;
+  }
   int sz = (int)user_data;
+  if (sz > 0) {
+    void *ret = drwrap_get_retval(wrapctx);
+    if (ret == NULL) {
+      return;
+    }
+    char *new_retval = (char*)ret + heap_pre_redzone_size;
+    fill_sentinel(new_retval + sz, heap_post_redzone_size / sizeof(ptr_uint_t));
+    drwrap_set_retval(wrapctx, new_retval);
+    hashtable_add_replace(mallocd_ptrs, new_retval, (void*)sz);
+  }
+
   if (sz < 0) {
     // TODO: we should use sz < 0 codes to signal that this is a weird
     // realloc 
@@ -204,7 +270,7 @@ static void module_load_fn(void *drcontext, const module_data_t *mod,
 
   app_pc free_pc = (app_pc)dr_get_proc_address(mod->start, "free");
   if (free_pc != NULL) {
-    drwrap_wrap(free_pc, before_free, NULL);
+    drwrap_wrap(free_pc, before_free, after_free);
   }
 }
 

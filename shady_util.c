@@ -1,4 +1,5 @@
 #include <string.h>
+#include "defines.h"
 #include "shady_util.h"
 
 bool
@@ -16,6 +17,23 @@ align_ptr(app_pc addr)
     ptr_int_t unaligned = (ptr_int_t) addr;
     // Get word-aligned address.
     return (app_pc) (unaligned - unaligned % sizeof(ptr_int_t));
+}
+
+void
+print_mem_registers(dr_mcontext_t * mc, const char * prefix)
+{
+    void* drcontext = dr_get_current_drcontext();
+
+    dr_mcontext_t local_mc;
+    if (mc == NULL) {
+        // Load the memory context if it wasn't passed.
+        local_mc.size = sizeof(local_mc);
+        local_mc.flags = DR_MC_ALL;
+        dr_get_mcontext(drcontext, &local_mc);
+        mc = &local_mc;
+    }
+
+    DEBUG("%s (sp = %p, bp = %p)\n", prefix, mc->xsp, mc->xbp);
 }
 
 char *
@@ -55,7 +73,7 @@ instr_print(void* drcontext, instr_t *instr)
 {
     static char buf[char_buf_size];
     if (instr_disassemble_to_buffer(drcontext, instr, buf, char_buf_size) > 0)
-        dr_printf(buf);
+        DEBUG(" (op: %x) %s\n", instr_get_opcode(instr), buf);
 }
 
 bool

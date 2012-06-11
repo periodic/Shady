@@ -9,4 +9,10 @@
 
 #define DEBUG(fmt, args...) if (DEBUG_ENABLED) dr_fprintf(STDERR, "%s:%d:%s(): " fmt, __FILE__, __LINE__, __func__, ## args);
 
+#ifndef TRACE_ENABLED 
+#define TRACE_ENABLED 0
+#endif
+
+#define TRACE(fmt, args...) if (TRACE_ENABLED) dr_fprintf(STDERR, "%s:%d:%s(): " fmt, __FILE__, __LINE__, __func__, ## args);
+
 #endif // DEFINES_H
