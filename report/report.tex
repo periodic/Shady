@@ -13,19 +13,22 @@
 
 \pagestyle{fancy}
 \fancyhead[L]{Haven, Case}
-\fancyhead[C]{\thetitle}
+\fancyhead[C]{Shady}
 \fancyhead[R]{\thepage}
 
 
 \newcommand{\code}[1]{\texttt{#1}}
 
+\begin{document}
+
+\maketitle
+
 \section{Introduction} % (fold)
 \label{sec:Introduction}
 
-Failure oblivious programming observes that most programs are build to handle errors.  The use of exceptions and error checking routines mean that many errors do not propagate more than a short distance through the code, particularly in the case of reqeust-response programs where errors tend not to escape a single iteration of the loop.  The failure oblivious approach is to take errors that would traditionally be security or terminal errors and discard the offending instruction, manufacturing output if the instruction has output.  Many programs are able to work under this paradigm and critical security vulnerabilities can be avoided.
+Failure oblivious programming \cite{Rinard04enhancingserver} observes that most programs are build to handle errors.  The use of exceptions and error checking routines mean that many errors do not propagate more than a short distance through the code, particularly in the case of request-response programs where errors tend not to escape a single iteration of the loop.  The failure oblivious approach is to take errors that would traditionally be security or terminal errors and discard the offending instruction, manufacturing output if the instruction has output.  Many programs are able to work under this paradigm and critical security vulnerabilities can be avoided.
 
-We present Shady, a dynamic instrumentation tool built on the DynamoRIO instrumentation platform. %ref
-It allows us to modify program behavior at runtime at the binary level.  With this tool we show that we can avoid the same error in Pine that the original authors of the static failure oblivious tool were able to prevent.
+We present Shady, a dynamic instrumentation tool built on the DynamoRIO instrumentation platform \cite{Bruening04efficient}.  It allows us to modify program behavior at runtime at the binary level.  With this tool we show that we can avoid the same error in Pine that the original authors of the static failure oblivious tool were able to prevent.
 
 \section{Background} % (fold)
 \label{sec:Background}
@@ -36,15 +39,15 @@ It allows us to modify program behavior at runtime at the binary level.  With th
 %       What were our impressions and experiences when using it?
 %   What were our goals?
 
-We used DynamoRIO to implement our tool.  DynamoRIO is a fast and extensible system for dynamic instrumentation, similar to PIN and Valgrind.  We saw that an equivalent to Memcheck had been implemented on DynamoRIO that achieved equal or better performance than Memcheck.  Looking at the API it appeared well documented and fairly straight forward, so it was our first choice.
+We used DynamoRIO to implement our tool.  DynamoRIO is a fast and extensible system for dynamic instrumentation, similar to PIN \cite{Luk05pin:building} and Valgrind \cite{Nethercote07valgrind:a}.  We saw that an equivalent to Memcheck \cite{Nethercote05memcheck} called Dr. Memory \cite{Bruening_practicalmemory} had been implemented on DynamoRIO that achieved equal or better performance than Memcheck.  Looking at the API it appeared well documented and fairly straight forward, so it was our first choice.
 
 We looked at the following types of errors:
-\begin{itemize}
-    \item[Heap Overflow] Heap overflows occur when a read or write goes beyond the end of a dynamically allocated buffer.  To avoid this we pad the end of every heap block with a red-zone, containing sentinel values to detect when such an operation occurs.  We expect most of these to be short, as in the case of a string copy which will terminate at the first null character.
+\begin{enumerate}
+    \item[Heap Overflow] Heap overflows occur when a read or write goes beyond the end of a dynamically allocated buffer.  To avoid this we pad the end of every heap block with a red zone, containing sentinel values to detect when such an operation occurs.  We expect most of these to be short, as in the case of a string copy which will terminate at the first null character.
     \item[Heap Underflow] Heap underflows occur when a read or write is made to a negative index of a buffer.  We expect this case to be rare.
     \item[Stack Overflow] A program may read or write outside of a stack-allocated buffer, which can overwrite control-flow information such as the base pointer and return address.  This is a common case for many security vulnerabilities.
     \item[Double Free] A program might try to free the same memory twice.  This is trivial to prevent.
-\end{itemize}
+\end{enumerate}
 
 % section Introduction (end)
 
@@ -58,11 +61,15 @@ We looked at the following types of errors:
 %       What did we choose to avoid implementing?
 %           Stack
 %       What did we find easy to implement?  hard?
-The bulk or our implementation focuses around instrumenting all loads, stores, mallocs and frees.  DynamoRIO provides hooks to assist in this, and overall hooking into the instructions was easy.  DynamoRIO also provides the ability to save the state of the program, call into instrumentation code, and then return to the original program.  This was invaluable for prototyping, but is not fast enough for production use.
+The bulk or our implementation focuses around instrumenting all loads, stores, \code{malloc}s and \code{free}s.  DynamoRIO provides hooks to assist in this, and overall hooking into the instructions was easy.  DynamoRIO also provides the ability to save the state of the program, call into instrumentation code, and then return to the original program.  This was invaluable for prototyping, but is not fast enough for production use.
 
-Instrumenting malloc and free involve wrapping function calls in calls to our instrumentation code.  DynamoRIO provides a facility for function wrapping which automatically calls instrumentation rountines before and after the call.  We wrapped all calls to \code{malloc}, \code{free}, \code{calloc} and \code{realloc}.  These calls modify the arguments to the original to allocate space for our pre- and post-red-zones.  We used values of 2-words and 4-words respectively.  These red-zones are filled with our sentinel values to detect invalid reads and writes.
+Instrumenting malloc and free involve wrapping function calls in calls to our instrumentation code.  DynamoRIO provides a facility for function wrapping which automatically calls instrumentation routines before and after the call.  We wrapped all calls to \code{malloc}, \code{free}, \code{calloc} and \code{realloc}.  These calls modify the arguments to the original to allocate space for our pre- and post-red zones.  We used values of 2-words and 4-words respectively.  These red zones are filled with our sentinel values to detect invalid reads and writes.
 
-Instrumenting loads and stores involves taking advantage of DynamoRIO's interpreter/JIT.  An event is triggered whenever a basic block is loaded.  
+Instrumenting loads and stores involves taking advantage of DynamoRIO's interpreter/JIT.  An event is triggered whenever a basic block is loaded, which will call any registered callbacks.  These callbacks can then modify the instructions before they are run.  The callback may be called many times for the same block because it will be called each time the block is run until it is added to the trace cache and also for fault address translation.  There is an option to always save basic blocks to the cache, which speeds up the program but incurs a memory overhead.  We observed that it is now 2012 and opted for the additional memory overhead.
+
+The instrumentation for loads and stores makes a call before the memory reference if the instruction reads or writes memory.  That call checks if the memory is readable and whether it is a sentinel value.  In either of these cases, if the operation is a write the operation is skipped and the program moves to the next instruction.  If the operation is a read, then the target of the read is filled with a manufactured value.  We opted for the increasing sequence $[0,1,2,3,\dots]$.  We stored a separate counter for each faulting instruction.
+
+We hoped to find a way to implemented isolation of stack frames to prevent buffer overruns on the stack.  However, we were unable to implement it at this time.  One solution we examined was saving the return address and base pointers to a second protected stack and restoring them on return.  We also looked at inserting red zones into the stack.  In both cases we found it near impossible to detect function calls when operating at the instruction level.  We found that even in modest programs the sequence of calls and returns did not form a properly nested tree.  We leave this to future work.
 
 % section Design (end)
 
@@ -74,6 +81,21 @@ Instrumenting loads and stores involves taking advantage of DynamoRIO's interpre
 %           Pine
 %       What were our results?
 %       How well did it work?
+%           Pine reads below recently freed memory?
+%           rep stors
+
+Our solution prevents a number of errors.  We tested on a few trivial programs and then on Pine, testing the same error used in previous papers.  %ref 
+In our trivial programs we tested that we correctly prevent small buffer overruns, null pointer errors and double free errors.  Our simple programs demonstrated that our premise was valid.
+
+We also tested a buffer overrun bug in Pine 4.44.  This bug involves a mistake in the code that calculates the length of a buffer allocated for the sender's address on email messages when displayed in the message list.  It underestimates the size when a large number of escaped quotes are included inside the quoted string.  This causes the program to crash when displaying the mailbox and it will continue to crash until the mail file is edited to remove the offending message.
+
+When run under Shady, Pine is able to correctly display the message, as the writes beyond the end of the buffer are discarded and when read the sentinel is seen to be zero, which properly terminates the string.  The program is then able to continue operating without crashing and display the malicious email.
+
+We a observed odd behavior when we first began testing with Pine.  Some of these were related to unusual instructions, and other to what appeared to be programming errors.
+
+A simple bug that we had to address was the use of the \code{rep stors} instruction, which writes the contents of \code{eax} into \code{edi} a number of times equal to the contents of \code{ecx} and incrementing or decrementing \code{edi} by four bytes each time depending on the direction flag.  There are options in DynamoRIO to express this operation as a loop, but it would involve converting our program to the DynamoRIO Multi-Instrumentation Manager framework.  We judged it would be infeasible to make these changes within our time frame.  In the mean time we ignored all \code{rep} instructions.
+
+A more complicated bug that we found ourselves running into was that when loading Pine we observed behavior that the program appeared to request a buffer from \code{malloc} and then would write and read memory eight bytes before the start of the buffer.  When we had red zones enabled the write and read would hit the red zone and the result would be zero, causing an eventual error in the program.  If we disabled red zones the program would still read before the beginning of the buffer but would complete successfully.  We solved this by eliminating our pre-buffer red zone during our tests.  Further work would be to investigate this issue further.
 
 % section Results (end)
 
@@ -83,6 +105,16 @@ Instrumenting loads and stores involves taking advantage of DynamoRIO's interpre
 %       What do we think could be easily implemented in the future?
 %       What would be hard to do?
 
+There are a few major deficiencies with our system.  One is that the system is slow, using the easiest instrumentations, but not the fastest.  A second is that we do not protect stack operations in any way.  A third is that we do not do sound checking of memory.  A final issue is that our code did not work properly with all the code we tested and needs to be extended to handle more cases.
+
+In terms of instrumentation size we believe the greatest gain will come from splitting the memory checks into a fast-path and slow-path check.  The fast-path can be inlined and only call the slow path if a sentinel is encountered.  This should speed up the program greatly because it will not save application state on every memory reference.  DynamoRIO is a fast back end and so the instrumentation we build on top should be able to achieve reasonable speed, at least approximating that of Dr. Memory.
+
+Stack memory should be protected in a similar way to heap memory.  This will protect against a much larger class of errors.  We were unable to implement this in our time frame, and there are hurdles associated with doing this at runtime as discussed previously.
+
+In our implementation we cut corners by choosing a four-byte sentinel value and assuming the client program would not use that value in normal operations.  The correct implementation would be to check whether the memory in question belongs to a red zone whenever a sentinel is encountered by tracking all positions where a red zone should exist.  We were unable to implement this in our time frame.
+
+Finally, we need to extend the code to handle more cases.  For example, our handling of \code{realloc} may not exactly match the semantics of the original call, such as a \code{realloc} of \code{NULL} being equivalent to \code{malloc}.  We also have some instructions we chose not to support such as \code{rep}.  DynamoRIO has support for all these, as evidenced by Dr. Memory, however the implementation of support for the full x86 instruction set is non-trivial.
+
 % section Future Work (end)
 
 \section{Conclusion} % (fold)
@@ -91,7 +123,13 @@ Instrumenting loads and stores involves taking advantage of DynamoRIO's interpre
 %       What did we learn:
 %           x86 is really tricky.
 
+This project was an interesting exploration of dynamic instrumentation tools.  We are both more more comfortable with dynamic analysis and aghast at the x86 instruction set and the difficulties of instrumenting it.
+
+The project proved to be a reasonable size to tackle in the abstract, but the implementation details were overwhelming.  We wonder if future students could extend this project to tackle the feature we were unable to address.
 
 % section Conclusion (end)
+
+\bibliographystyle{plain}
+\bibliography{references}
 
 \end{document}
