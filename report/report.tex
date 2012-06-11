@@ -19,34 +19,79 @@
 
 \newcommand{\code}[1]{\texttt{#1}}
 
-\begin{document}
-\maketitle
+\section{Introduction} % (fold)
+\label{sec:Introduction}
 
-\begin{abstract}
 Failure oblivious programming observes that most programs are build to handle errors.  The use of exceptions and error checking routines mean that many errors do not propagate more than a short distance through the code, particularly in the case of reqeust-response programs where errors tend not to escape a single iteration of the loop.  The failure oblivious approach is to take errors that would traditionally be security or terminal errors and discard the offending instruction, manufacturing output if the instruction has output.  Many programs are able to work under this paradigm and critical security vulnerabilities can be avoided.
 
 We present Shady, a dynamic instrumentation tool built on the DynamoRIO instrumentation platform. %ref
 It allows us to modify program behavior at runtime at the binary level.  With this tool we show that we can avoid the same error in Pine that the original authors of the static failure oblivious tool were able to prevent.
-\end{abstract}
 
-% What are we trying to say this report.
+\section{Background} % (fold)
+\label{sec:Background}
+
 %   What is DynamoRIO?
 %       Why Was DynamoRIO useful and a good fit for our project?  
 %       What were the alternatives?
 %       What were our impressions and experiences when using it?
+%   What were our goals?
+
+We used DynamoRIO to implement our tool.  DynamoRIO is a fast and extensible system for dynamic instrumentation, similar to PIN and Valgrind.  We saw that an equivalent to Memcheck had been implemented on DynamoRIO that achieved equal or better performance than Memcheck.  Looking at the API it appeared well documented and fairly straight forward, so it was our first choice.
+
+We looked at the following types of errors:
+\begin{itemize}
+    \item[Heap Overflow] Heap overflows occur when a read or write goes beyond the end of a dynamically allocated buffer.  To avoid this we pad the end of every heap block with a red-zone, containing sentinel values to detect when such an operation occurs.  We expect most of these to be short, as in the case of a string copy which will terminate at the first null character.
+    \item[Heap Underflow] Heap underflows occur when a read or write is made to a negative index of a buffer.  We expect this case to be rare.
+    \item[Stack Overflow] A program may read or write outside of a stack-allocated buffer, which can overwrite control-flow information such as the base pointer and return address.  This is a common case for many security vulnerabilities.
+    \item[Double Free] A program might try to free the same memory twice.  This is trivial to prevent.
+\end{itemize}
+
+% section Introduction (end)
+
+\section{Design} % (fold)
+\label{sec:Design}
 %   What did we implement?
-%       What were our goals?
 %       What and how did we implement our FO instrumentation?
+%           Red zones.
+%           Trace all malloc/free
+%           Trace all loads/stores
 %       What did we choose to avoid implementing?
+%           Stack
 %       What did we find easy to implement?  hard?
+The bulk or our implementation focuses around instrumenting all loads, stores, mallocs and frees.  DynamoRIO provides hooks to assist in this, and overall hooking into the instructions was easy.  DynamoRIO also provides the ability to save the state of the program, call into instrumentation code, and then return to the original program.  This was invaluable for prototyping, but is not fast enough for production use.
+
+Instrumenting malloc and free involve wrapping function calls in calls to our instrumentation code.  DynamoRIO provides a facility for function wrapping which automatically calls instrumentation rountines before and after the call.  We wrapped all calls to \code{malloc}, \code{free}, \code{calloc} and \code{realloc}.  These calls modify the arguments to the original to allocate space for our pre- and post-red-zones.  We used values of 2-words and 4-words respectively.  These red-zones are filled with our sentinel values to detect invalid reads and writes.
+
+Instrumenting loads and stores involves taking advantage of DynamoRIO's interpreter/JIT.  An event is triggered whenever a basic block is loaded.  
+
+% section Design (end)
+
+\section{Results} % (fold)
+\label{sec:Results}
 %   How well did it work?
+%       Prevent trivial issues like double-free.
 %       What programs did we test?
+%           Pine
 %       What were our results?
 %       How well did it work?
+
+% section Results (end)
+
+\section{Future Work} % (fold)
+\label{sec:Future Work}
 %   Future work
 %       What do we think could be easily implemented in the future?
 %       What would be hard to do?
 
+% section Future Work (end)
 
+\section{Conclusion} % (fold)
+\label{sec:Conclusion}
+%   Conclusions
+%       What did we learn:
+%           x86 is really tricky.
+
+
+% section Conclusion (end)
 
 \end{document}
